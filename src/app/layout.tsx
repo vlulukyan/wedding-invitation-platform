@@ -3,16 +3,14 @@ import "./globals.css";
 import { templateStylePaths } from "@/constants/templateAssets";
 
 export const metadata: Metadata = {
-  title: "Habibi RSVP - Powered by Next.js",
-  description:
-    "Wedding landing page cloned from the Habibi theme with a live RSVP workflow backed by SQLite + email alerts.",
+  title: "Wedding Invitation",
+  description: "Wedding invitation with RSVP details.",
   metadataBase: new URL("https://are-you-attending.local"),
   openGraph: {
-    title: "Habibi RSVP - Powered by Next.js",
-    description:
-      "Elegant wedding invite landing page with RSVP collection, SQLite storage, and email notifications.",
+    title: "Wedding Invitation",
+    description: "Wedding invitation with RSVP details.",
     url: "https://example.com",
-    siteName: "Habibi RSVP",
+    siteName: "Wedding Invitation",
     images: [
       {
         url: "/template-page-assets/images/html/tf/habibi/assets/images/slider/slide-1.jpg",
