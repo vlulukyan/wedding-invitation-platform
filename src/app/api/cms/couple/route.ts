@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     return unauthorized();
   }
   const locale = request.nextUrl.searchParams.get("locale") || undefined;
-  const couple = getCoupleSection(locale || undefined);
+  const couple = await getCoupleSection(locale || undefined);
   return NextResponse.json({ couple });
 }
 
@@ -24,6 +24,6 @@ export async function PUT(request: NextRequest) {
   const data = await request.json().catch(() => ({}));
   const parsed = coupleSectionUpdateSchema.parse(data);
   const locale = request.nextUrl.searchParams.get("locale") || undefined;
-  const updated = updateCoupleSection(locale, parsed);
+  const updated = await updateCoupleSection(locale, parsed);
   return NextResponse.json({ couple: updated });
 }

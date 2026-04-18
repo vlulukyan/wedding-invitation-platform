@@ -18,7 +18,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   }
   const data = await request.json().catch(() => ({}));
   const parsed = cmsMenuItemUpdateSchema.parse(data);
-  const updated = updateMenuItem(id, {
+  const updated = await updateMenuItem(id, {
     ...parsed,
     is_visible: parsed.is_visible === undefined ? undefined : parsed.is_visible ? 1 : 0,
   });
@@ -33,6 +33,6 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
   if (Number.isNaN(id)) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
-  deleteMenuItem(id);
+  await deleteMenuItem(id);
   return NextResponse.json({ ok: true });
 }

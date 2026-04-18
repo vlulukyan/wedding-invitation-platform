@@ -21,7 +21,7 @@ export async function PUT(request: NextRequest, { params }: { params: { slug: st
       ...blockData,
       ...(is_visible === undefined ? {} : { is_visible: is_visible ? 1 : 0 }),
     };
-    const updated = updateBlock(locale, params.slug, updateData);
+    const updated = await updateBlock(locale, params.slug, updateData);
     return NextResponse.json({ block: updated });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to update block";
@@ -35,7 +35,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { slug:
   }
   const locale = request.nextUrl.searchParams.get("locale") || undefined;
   try {
-    deleteBlock(locale, params.slug);
+    await deleteBlock(locale, params.slug);
     return NextResponse.json({ ok: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to delete block";

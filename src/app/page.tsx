@@ -17,13 +17,13 @@ type PageProps = {
   searchParams?: Record<string, string | string[] | undefined>;
 };
 
-export default function Home({ searchParams }: PageProps) {
+export default async function Home({ searchParams }: PageProps) {
   const cookieStore = cookies();
   const cookieLocale = cookieStore.get("aya_locale")?.value;
   const queryLocale = Array.isArray(searchParams?.lang) ? searchParams?.lang[0] : searchParams?.lang;
   const locale = normalizePublicLocale(queryLocale ?? cookieLocale ?? DEFAULT_PUBLIC_LOCALE);
   const { body } = getTemplateMarkup();
-  const cms = getCmsPayload(locale);
+  const cms = await getCmsPayload(locale);
   const renderedBody = renderTemplateWithCms(body, cms);
   const uiMessages = getUiMessages(locale);
 

@@ -6,17 +6,17 @@ import { getCmsPayload, listMedia, seedDefaultMedia } from "@/lib/cms";
 import { DEFAULT_LOCALE } from "@/lib/locales";
 import { listInvitees } from "@/lib/invitees";
 
-export default function AdminPage() {
+export default async function AdminPage() {
   if (!hasValidSessionFromCookies()) {
     redirect("/admin/login");
   }
   const locale = DEFAULT_LOCALE;
-  seedDefaultMedia(locale);
-  const { meta, menu, blocks, media, couple, event } = getCmsPayload(locale);
-  const sliderMedia = media.hero_slider ?? listMedia("hero_slider", locale);
-  const blogMedia = media.blog_posts ?? listMedia("blog_posts", locale);
-  const rsvpMedia = media.rsvp_images ?? listMedia("rsvp_images", locale);
-  const invitees = listInvitees();
+  await seedDefaultMedia(locale);
+  const { meta, menu, blocks, media, couple, event } = await getCmsPayload(locale);
+  const sliderMedia = media.hero_slider ?? (await listMedia("hero_slider", locale));
+  const blogMedia = media.blog_posts ?? (await listMedia("blog_posts", locale));
+  const rsvpMedia = media.rsvp_images ?? (await listMedia("rsvp_images", locale));
+  const invitees = await listInvitees();
   return (
     <AdminDashboard
       initialLocale={locale}

@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     return unauthorized();
   }
   const locale = request.nextUrl.searchParams.get("locale") || undefined;
-  const menu = listMenu(locale || undefined);
+  const menu = await listMenu(locale || undefined);
   return NextResponse.json({ menu });
 }
 
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
   const payload = await request.json().catch(() => ({}));
   const parsed = cmsMenuItemSchema.parse(payload);
   const locale = request.nextUrl.searchParams.get("locale") || undefined;
-  const created = createMenuItem(locale, {
+  const created = await createMenuItem(locale, {
     label: parsed.label,
     href: parsed.href,
     position: parsed.position,

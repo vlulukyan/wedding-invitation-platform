@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     return unauthorized();
   }
   const locale = request.nextUrl.searchParams.get("locale") || undefined;
-  const blocks = listBlocks(locale || undefined);
+  const blocks = await listBlocks(locale || undefined);
   return NextResponse.json({ blocks });
 }
 
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
   const data = await request.json().catch(() => ({}));
   const parsed = cmsBlockSchema.parse(data);
   const locale = request.nextUrl.searchParams.get("locale") || undefined;
-  const created = createBlock(locale, {
+  const created = await createBlock(locale, {
     slug: parsed.slug,
     selector: parsed.selector,
     content_html: parsed.content_html,

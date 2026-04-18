@@ -9,8 +9,8 @@ export async function POST(request: Request) {
   try {
     const data = await request.json();
     const payload = rsvpSchema.parse(data);
-    const record = saveRsvp(payload);
-    saveInviteeResponseFromRsvp(payload);
+    const record = await saveRsvp(payload);
+    await saveInviteeResponseFromRsvp(payload);
 
     let emailSent = false;
     try {

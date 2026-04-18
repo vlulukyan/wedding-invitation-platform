@@ -16,7 +16,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
   const data = await request.json().catch(() => ({}));
-  const updated = updateInvitee(id, data);
+  const updated = await updateInvitee(id, data);
   return NextResponse.json({ invitee: updated });
 }
 
@@ -28,6 +28,6 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
   if (Number.isNaN(id)) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
-  deleteInvitee(id);
+  await deleteInvitee(id);
   return NextResponse.json({ ok: true });
 }

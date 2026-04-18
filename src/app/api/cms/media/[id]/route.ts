@@ -1,11 +1,8 @@
-import { promises as fs } from "fs";
-import path from "path";
 import { NextRequest, NextResponse } from "next/server";
 
 import { hasValidSessionFromRequest } from "@/lib/adminAuth";
 import { deleteMedia, updateMedia } from "@/lib/cms";
-
-const UPLOAD_DIR = path.join(process.cwd(), "public");
+import { deleteUploadUrl } from "@/lib/blobStorage";
 
 function unauthorized() {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -20,7 +17,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
   const data = await request.json().catch(() => ({}));
-  const updated = updateMedia(id, data);
+  const updated = await updateMedia(id, data);
   return NextResponse.json({ media: updated });
 }
 
@@ -32,15 +29,8 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
   if (Number.isNaN(id)) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
-  const current = updateMedia(id, {});
-  deleteMedia(id);
-  if (current?.image_url?.startsWith("/uploads/")) {
-    const filePath = path.join(UPLOAD_DIR, current.image_url.replace(/^\//, ""));
-    try {
-      await fs.unlink(filePath);
-    } catch {
-      // ignore missing file
-    }
-  }
+  const current = await updateMedia(id, {});
+  await deleteMedia(id);
+  await deleteUploadUrl(current.image_url);
   return NextResponse.json({ ok: true });
 }

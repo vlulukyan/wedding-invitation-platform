@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-import { getDb } from "@/lib/db";
+import { queryRow, queryRows, sql } from "@/lib/db";
 import type { Locale } from "@/lib/locales";
 import type { RsvpPayload } from "@/lib/rsvpSchema";
 
@@ -32,59 +32,69 @@ function splitName(name: string) {
   return { first_name, last_name };
 }
 
-export function listInvitees(): Invitee[] {
-  return getDb().prepare("SELECT * FROM invitees ORDER BY created_at DESC").all() as Invitee[];
+export async function listInvitees(): Promise<Invitee[]> {
+  return queryRows<Invitee>("SELECT * FROM invitees ORDER BY created_at DESC");
 }
 
-export function createInvitee(data: {
+export async function createInvitee(data: {
   first_name?: string;
   last_name?: string;
   email?: string;
   phone?: string;
   locale?: Locale;
-}): Invitee {
-  const db = getDb();
+}): Promise<Invitee> {
   const invite_code = generateCode();
   const locale = (data.locale ?? "en") as Locale;
-  const result = db
-    .prepare(
-      `INSERT INTO invitees (first_name, last_name, email, phone, locale, invite_code)
-       VALUES (@first_name, @last_name, @email, @phone, @locale, @invite_code)`
+  const [created] = await sql`
+    INSERT INTO invitees (first_name, last_name, email, phone, locale, invite_code)
+    VALUES (
+      ${data.first_name ?? null},
+      ${data.last_name ?? null},
+      ${data.email ?? null},
+      ${data.phone ?? null},
+      ${locale},
+      ${invite_code}
     )
-    .run({ ...data, locale, invite_code });
-  return db.prepare("SELECT * FROM invitees WHERE id = ?").get(result.lastInsertRowid) as Invitee;
+    RETURNING *
+  `;
+  return created as Invitee;
 }
 
-export function updateInvitee(id: number, data: Partial<Invitee>): Invitee {
+export async function updateInvitee(id: number, data: Partial<Invitee>): Promise<Invitee> {
   const keys = Object.keys(data);
-  if (!keys.length) {
-    return getDb().prepare("SELECT * FROM invitees WHERE id = ?").get(id) as Invitee;
+  if (keys.length) {
+    const assignments = keys.map((key, index) => `${key} = $${index + 1}`);
+    const values = keys.map((key) => data[key as keyof Invitee]);
+    await sql.query(`UPDATE invitees SET ${assignments.join(", ")}, updated_at = now() WHERE id = $${values.length + 1}`, [
+      ...values,
+      id,
+    ]);
   }
-  const assignments = keys.map((key) => `${key} = @${key}`);
-  getDb()
-    .prepare(`UPDATE invitees SET ${assignments.join(", ")}, updated_at = datetime('now') WHERE id = @id`)
-    .run({ ...data, id });
-  return getDb().prepare("SELECT * FROM invitees WHERE id = ?").get(id) as Invitee;
-}
-
-export function deleteInvitee(id: number): void {
-  getDb().prepare("DELETE FROM invitees WHERE id = ?").run(id);
-}
-
-export function updateInviteeByCode(inviteCode: string, data: Partial<Invitee>): Invitee | undefined {
-  const db = getDb();
-  const assignments = Object.keys(data).map((key) => `${key} = @${key}`);
-  if (!assignments.length) {
-    return db.prepare("SELECT * FROM invitees WHERE invite_code = ?").get(inviteCode) as Invitee | undefined;
+  const row = await queryRow<Invitee>("SELECT * FROM invitees WHERE id = $1", [id]);
+  if (!row) {
+    throw new Error("Invitee not found");
   }
-  db.prepare(`UPDATE invitees SET ${assignments.join(", ")}, updated_at = datetime('now') WHERE invite_code = @invite_code`).run({
-    ...data,
-    invite_code: inviteCode,
-  });
-  return db.prepare("SELECT * FROM invitees WHERE invite_code = ?").get(inviteCode) as Invitee | undefined;
+  return row;
 }
 
-export function markInviteeResponse(inviteCode: string, attending: boolean, guestCount: number | null, note?: string) {
+export async function deleteInvitee(id: number): Promise<void> {
+  await queryRows("DELETE FROM invitees WHERE id = $1", [id]);
+}
+
+export async function updateInviteeByCode(inviteCode: string, data: Partial<Invitee>): Promise<Invitee | undefined> {
+  const keys = Object.keys(data);
+  if (keys.length) {
+    const assignments = keys.map((key, index) => `${key} = $${index + 1}`);
+    const values = keys.map((key) => data[key as keyof Invitee]);
+    await sql.query(
+      `UPDATE invitees SET ${assignments.join(", ")}, updated_at = now() WHERE invite_code = $${values.length + 1}`,
+      [...values, inviteCode]
+    );
+  }
+  return queryRow<Invitee>("SELECT * FROM invitees WHERE invite_code = $1", [inviteCode]);
+}
+
+export async function markInviteeResponse(inviteCode: string, attending: boolean, guestCount: number | null, note?: string) {
   const status: InviteeStatus = attending ? "accepted" : "declined";
   return updateInviteeByCode(inviteCode, {
     attending: attending ? 1 : 0,
@@ -95,7 +105,7 @@ export function markInviteeResponse(inviteCode: string, attending: boolean, gues
   });
 }
 
-export function saveInviteeResponseFromRsvp(payload: RsvpPayload) {
+export async function saveInviteeResponseFromRsvp(payload: RsvpPayload) {
   const attending = payload.attending === "yes";
   const status: InviteeStatus = attending ? "accepted" : "declined";
   const response = {
@@ -112,7 +122,7 @@ export function saveInviteeResponseFromRsvp(payload: RsvpPayload) {
     return updateInviteeByCode(payload.inviteCode, response);
   }
 
-  const invitee = createInvitee({
+  const invitee = await createInvitee({
     ...splitName(payload.name),
     phone: payload.phone,
     locale: payload.locale as Locale | undefined,

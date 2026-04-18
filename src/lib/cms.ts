@@ -1,7 +1,7 @@
 import { load } from "cheerio";
 
-import { getDb } from "@/lib/db";
-import { DEFAULT_LOCALE, Locale, SUPPORTED_LOCALES, normalizeLocale } from "@/lib/locales";
+import { queryRow, queryRows, sql } from "@/lib/db";
+import { DEFAULT_LOCALE, Locale, normalizeLocale } from "@/lib/locales";
 import { getTemplateMarkup } from "@/lib/template";
 
 export type CmsMeta = {
@@ -167,118 +167,122 @@ const DEFAULT_EVENT: Omit<EventSection, "locale"> = {
   ],
 };
 
-function ensureLocale(locale: Locale) {
-  ensureMetaLocale(locale);
-  ensureMenuLocale(locale);
-  ensureBlocksLocale(locale);
-  ensureCoupleSection(locale);
-  ensureEventSection(locale);
+async function ensureLocale(locale: Locale) {
+  await ensureMetaLocale(locale);
+  await ensureMenuLocale(locale);
+  await ensureBlocksLocale(locale);
+  await ensureCoupleSection(locale);
+  await ensureEventSection(locale);
 }
 
-function ensureMetaLocale(locale: Locale) {
-  const db = getDb();
-  const row = db.prepare('SELECT locale FROM cms_meta_localized WHERE locale = ?').get(locale) as { locale: string } | undefined;
+async function ensureMetaLocale(locale: Locale) {
+  const row = await queryRow<{ locale: string }>("SELECT locale FROM cms_meta_localized WHERE locale = $1", [locale]);
   if (row) {
     return;
   }
-  const fallback = db
-    .prepare('SELECT * FROM cms_meta_localized WHERE locale = ?')
-    .get(DEFAULT_LOCALE) as CmsMeta | undefined;
+
+  const fallback = await queryRow<CmsMeta>("SELECT * FROM cms_meta_localized WHERE locale = $1", [DEFAULT_LOCALE]);
   if (fallback) {
-    const { locale: _ignoredLocale, ...fallbackData } = fallback;
-    db.prepare(
-      `INSERT INTO cms_meta_localized (locale, bride_name, groom_name, event_date, event_location, hero_headline, hero_subtext, brand_text)
-       VALUES (@locale, @bride_name, @groom_name, @event_date, @event_location, @hero_headline, @hero_subtext, @brand_text)`
-    ).run({ locale, ...fallbackData });
-  } else {
-    db.prepare(
-      `INSERT INTO cms_meta_localized (locale, bride_name, groom_name, event_date, event_location, hero_headline, hero_subtext, brand_text)
-       VALUES (@locale, 'Bride', 'Groom', NULL, NULL, 'Save the Date', NULL, 'Habibi')`
-    ).run({ locale });
+    await sql`
+      INSERT INTO cms_meta_localized (
+        locale,
+        bride_name,
+        groom_name,
+        event_date,
+        event_location,
+        hero_headline,
+        hero_subtext,
+        brand_text
+      )
+      VALUES (
+        ${locale},
+        ${fallback.bride_name},
+        ${fallback.groom_name},
+        ${fallback.event_date},
+        ${fallback.event_location},
+        ${fallback.hero_headline},
+        ${fallback.hero_subtext},
+        ${fallback.brand_text}
+      )
+      ON CONFLICT(locale) DO NOTHING
+    `;
+    return;
+  }
+
+  await sql`
+    INSERT INTO cms_meta_localized (
+      locale,
+      bride_name,
+      groom_name,
+      event_date,
+      event_location,
+      hero_headline,
+      hero_subtext,
+      brand_text
+    )
+    VALUES (${locale}, 'Bride', 'Groom', NULL, NULL, 'Save the Date', NULL, 'Habibi')
+    ON CONFLICT(locale) DO NOTHING
+  `;
+}
+
+async function ensureMenuLocale(locale: Locale) {
+  const countRow = await queryRow<{ count: string }>("SELECT COUNT(1) as count FROM cms_menu_items WHERE locale = $1", [locale]);
+  if (Number(countRow?.count ?? 0) > 0) {
+    return;
+  }
+
+  const source =
+    locale === DEFAULT_LOCALE
+      ? DEFAULT_MENU
+      : await queryRows<Omit<CmsMenuItem, "id" | "locale">>(
+          "SELECT label, href, position, is_visible FROM cms_menu_items WHERE locale = $1 ORDER BY position",
+          [DEFAULT_LOCALE]
+        );
+  const items = source.length ? source : DEFAULT_MENU;
+  for (const item of items) {
+    await sql`
+      INSERT INTO cms_menu_items (label, href, position, is_visible, locale)
+      VALUES (${item.label}, ${item.href}, ${item.position}, ${item.is_visible}, ${locale})
+      ON CONFLICT(label, href, locale) DO NOTHING
+    `;
   }
 }
 
-function ensureMenuLocale(locale: Locale) {
-  const db = getDb();
-  const countRow = db.prepare('SELECT COUNT(1) as count FROM cms_menu_items WHERE locale = ?').get(locale) as { count: number };
-  if (countRow.count > 0) {
+async function ensureBlocksLocale(locale: Locale) {
+  const countRow = await queryRow<{ count: string }>("SELECT COUNT(1) as count FROM cms_blocks WHERE locale = $1", [locale]);
+  if (Number(countRow?.count ?? 0) > 0) {
     return;
   }
-  if (locale === DEFAULT_LOCALE) {
-    const stmt = db.prepare(
-      `INSERT INTO cms_menu_items (label, href, position, is_visible, locale) VALUES (@label, @href, @position, @is_visible, @locale)`
-    );
-    const insertMany = db.transaction(() => {
-      for (const item of DEFAULT_MENU) {
-        stmt.run({ ...item, locale: DEFAULT_LOCALE });
-      }
-    });
-    insertMany();
-    return;
-  }
-  const fallback = db
-    .prepare('SELECT label, href, position, is_visible FROM cms_menu_items WHERE locale = ? ORDER BY position')
-    .all(DEFAULT_LOCALE) as Array<Omit<CmsMenuItem, 'id' | 'locale'>>;
-  const stmt = db.prepare(
-    `INSERT INTO cms_menu_items (label, href, position, is_visible, locale) VALUES (@label, @href, @position, @is_visible, @locale)`
-  );
-  const insertMany = db.transaction(() => {
-    for (const item of fallback) {
-      stmt.run({ ...item, locale });
-    }
-  });
-  insertMany();
-}
 
-function ensureBlocksLocale(locale: Locale) {
-  const db = getDb();
-  const countRow = db.prepare('SELECT COUNT(1) as count FROM cms_blocks WHERE locale = ?').get(locale) as { count: number };
-  if (countRow.count > 0) {
-    return;
-  }
   const { body } = getTemplateMarkup();
   const $ = load(`<body>${body}</body>`);
-  const stmt = db.prepare(
-    `INSERT INTO cms_blocks (slug, selector, content_html, position, is_visible, locale) VALUES (@slug, @selector, @content_html, @position, 1, @locale)`
-  );
-  const insertMany = db.transaction(() => {
-    for (const block of DEFAULT_BLOCKS) {
-      const element = $(block.selector).first();
-      if (!element.length) {
-        continue;
-      }
-      const html = element.html() ?? '';
-      stmt.run({
-        slug: block.slug,
-        selector: block.selector,
-        content_html: html.trim(),
-        position: block.position,
-        locale,
-      });
+  for (const block of DEFAULT_BLOCKS) {
+    const element = $(block.selector).first();
+    if (!element.length) {
+      continue;
     }
-  });
-  insertMany();
+    const html = (element.html() ?? "").trim();
+    await sql`
+      INSERT INTO cms_blocks (slug, selector, content_html, position, is_visible, locale)
+      VALUES (${block.slug}, ${block.selector}, ${html}, ${block.position}, 1, ${locale})
+      ON CONFLICT(slug, locale) DO NOTHING
+    `;
+  }
 }
 
-export function getCmsPayload(localeInput?: string): CmsPayload {
+export async function getCmsPayload(localeInput?: string): Promise<CmsPayload> {
   const locale = normalizeLocale(localeInput);
-  ensureLocale(locale);
-  seedDefaultMedia(locale);
-  const db = getDb();
-  const meta = db
-    .prepare(
-      'SELECT locale, bride_name, groom_name, event_date, event_location, hero_headline, hero_subtext, brand_text FROM cms_meta_localized WHERE locale = ?'
-    )
-    .get(locale) as CmsMeta;
-  const menu = db
-    .prepare('SELECT * FROM cms_menu_items WHERE locale = ? ORDER BY position')
-    .all(locale) as CmsMenuItem[];
-  const blocks = db
-    .prepare('SELECT * FROM cms_blocks WHERE locale = ? ORDER BY position')
-    .all(locale) as CmsBlock[];
-  const mediaEntries = db
-    .prepare('SELECT * FROM cms_media WHERE locale = ? ORDER BY collection, position, id')
-    .all(locale) as CmsMedia[];
+  await ensureLocale(locale);
+  await seedDefaultMedia(locale);
+
+  const meta = await queryRow<CmsMeta>(
+    "SELECT locale, bride_name, groom_name, event_date, event_location, hero_headline, hero_subtext, brand_text FROM cms_meta_localized WHERE locale = $1",
+    [locale]
+  );
+  const menu = await queryRows<CmsMenuItem>("SELECT * FROM cms_menu_items WHERE locale = $1 ORDER BY position", [locale]);
+  const blocks = await queryRows<CmsBlock>("SELECT * FROM cms_blocks WHERE locale = $1 ORDER BY position", [locale]);
+  const mediaEntries = await queryRows<CmsMedia>("SELECT * FROM cms_media WHERE locale = $1 ORDER BY collection, position, id", [locale]);
+
   const grouped: Record<string, CmsMedia[]> = {};
   for (const entry of mediaEntries) {
     if (!grouped[entry.collection]) {
@@ -286,8 +290,12 @@ export function getCmsPayload(localeInput?: string): CmsPayload {
     }
     grouped[entry.collection].push(entry);
   }
-  const couple = getCoupleSection(locale);
-  const event = getEventSection(locale);
+
+  const couple = await getCoupleSection(locale);
+  const event = await getEventSection(locale);
+  if (!meta) {
+    throw new Error(`Missing CMS meta for locale ${locale}`);
+  }
   return { meta, menu, blocks: filterEditableBlocks(blocks), media: grouped, couple, event };
 }
 
@@ -301,35 +309,38 @@ function assertBlockEditable(slug: string) {
   }
 }
 
-export function getCoupleSection(localeInput?: string): CoupleSection {
+export async function getCoupleSection(localeInput?: string): Promise<CoupleSection> {
   const locale = normalizeLocale(localeInput);
-  ensureCoupleSection(locale);
-  return getDb()
-    .prepare(
-      `SELECT
-        locale,
-        left_name,
-        left_bio,
-        left_icon_url,
-        left_facebook_url,
-        left_twitter_url,
-        left_instagram_url,
-        right_name,
-        right_bio,
-        right_icon_url,
-        right_facebook_url,
-        right_twitter_url,
-        right_instagram_url,
-        center_photo_url,
-        center_overlay_url
-      FROM cms_couple_section WHERE locale = ?`
-    )
-    .get(locale) as CoupleSection;
+  await ensureCoupleSection(locale);
+  const row = await queryRow<CoupleSection>(
+    `SELECT
+      locale,
+      left_name,
+      left_bio,
+      left_icon_url,
+      left_facebook_url,
+      left_twitter_url,
+      left_instagram_url,
+      right_name,
+      right_bio,
+      right_icon_url,
+      right_facebook_url,
+      right_twitter_url,
+      right_instagram_url,
+      center_photo_url,
+      center_overlay_url
+    FROM cms_couple_section WHERE locale = $1`,
+    [locale]
+  );
+  if (!row) {
+    throw new Error(`Missing couple section for locale ${locale}`);
+  }
+  return row;
 }
 
-export function updateCoupleSection(localeInput: string | undefined, payload: Partial<CoupleSection>): CoupleSection {
+export async function updateCoupleSection(localeInput: string | undefined, payload: Partial<CoupleSection>): Promise<CoupleSection> {
   const locale = normalizeLocale(localeInput);
-  ensureCoupleSection(locale);
+  await ensureCoupleSection(locale);
   const allowedKeys: Array<keyof CoupleSection> = [
     "left_name",
     "left_bio",
@@ -348,20 +359,26 @@ export function updateCoupleSection(localeInput: string | undefined, payload: Pa
   ];
   const keys = Object.keys(payload).filter((key) => allowedKeys.includes(key as keyof CoupleSection));
   if (keys.length) {
-    const assignments = keys.map((key) => `${key} = @${key}`);
-    getDb()
-      .prepare(`UPDATE cms_couple_section SET ${assignments.join(", ")}, updated_at = datetime('now') WHERE locale = @locale`)
-      .run({ ...payload, locale });
+    const assignments = keys.map((key, index) => `${key} = $${index + 1}`);
+    const values = keys.map((key) => payload[key as keyof CoupleSection] ?? null);
+    await sql.query(
+      `UPDATE cms_couple_section SET ${assignments.join(", ")}, updated_at = now() WHERE locale = $${values.length + 1}`,
+      [...values, locale]
+    );
   }
   return getCoupleSection(locale);
 }
 
-export function getEventSection(localeInput?: string): EventSection {
+export async function getEventSection(localeInput?: string): Promise<EventSection> {
   const locale = normalizeLocale(localeInput);
-  ensureEventSection(locale);
-  const row = getDb()
-    .prepare("SELECT locale, eyebrow, heading, items_json FROM cms_event_section WHERE locale = ?")
-    .get(locale) as { locale: Locale; eyebrow: string; heading: string; items_json: string };
+  await ensureEventSection(locale);
+  const row = await queryRow<{ locale: Locale; eyebrow: string; heading: string; items_json: string }>(
+    "SELECT locale, eyebrow, heading, items_json FROM cms_event_section WHERE locale = $1",
+    [locale]
+  );
+  if (!row) {
+    throw new Error(`Missing event section for locale ${locale}`);
+  }
   return {
     locale: row.locale,
     eyebrow: row.eyebrow,
@@ -370,9 +387,12 @@ export function getEventSection(localeInput?: string): EventSection {
   };
 }
 
-export function updateEventSection(localeInput: string | undefined, payload: Partial<Omit<EventSection, "locale">>): EventSection {
+export async function updateEventSection(
+  localeInput: string | undefined,
+  payload: Partial<Omit<EventSection, "locale">>
+): Promise<EventSection> {
   const locale = normalizeLocale(localeInput);
-  ensureEventSection(locale);
+  await ensureEventSection(locale);
   const data: Record<string, string> = {};
   if (typeof payload.eyebrow === "string") {
     data.eyebrow = payload.eyebrow;
@@ -385,121 +405,142 @@ export function updateEventSection(localeInput: string | undefined, payload: Par
   }
   const keys = Object.keys(data);
   if (keys.length) {
-    const assignments = keys.map((key) => `${key} = @${key}`);
-    getDb()
-      .prepare(`UPDATE cms_event_section SET ${assignments.join(", ")}, updated_at = datetime('now') WHERE locale = @locale`)
-      .run({ ...data, locale });
+    const assignments = keys.map((key, index) => `${key} = $${index + 1}`);
+    const values = keys.map((key) => data[key]);
+    await sql.query(
+      `UPDATE cms_event_section SET ${assignments.join(", ")}, updated_at = now() WHERE locale = $${values.length + 1}`,
+      [...values, locale]
+    );
   }
   return getEventSection(locale);
 }
 
-export function updateCmsMeta(localeInput: string | undefined, payload: Partial<CmsMeta>): CmsMeta {
+export async function updateCmsMeta(localeInput: string | undefined, payload: Partial<CmsMeta>): Promise<CmsMeta> {
   const locale = normalizeLocale(localeInput);
-  ensureMetaLocale(locale);
-  const db = getDb();
-  const keys = Object.keys(payload).filter((key) => key !== 'locale');
+  await ensureMetaLocale(locale);
+  const keys = Object.keys(payload).filter((key) => key !== "locale");
   if (!keys.length) {
-    return db
-      .prepare(
-        'SELECT locale, bride_name, groom_name, event_date, event_location, hero_headline, hero_subtext, brand_text FROM cms_meta_localized WHERE locale = ?'
-      )
-      .get(locale) as CmsMeta;
+    const row = await queryRow<CmsMeta>(
+      "SELECT locale, bride_name, groom_name, event_date, event_location, hero_headline, hero_subtext, brand_text FROM cms_meta_localized WHERE locale = $1",
+      [locale]
+    );
+    if (!row) {
+      throw new Error(`Missing CMS meta for locale ${locale}`);
+    }
+    return row;
   }
-  const assignments = keys.map((key) => `${key} = @${key}`);
-  db.prepare(
-    `UPDATE cms_meta_localized SET ${assignments.join(', ')}, updated_at = datetime('now') WHERE locale = @locale`
-  ).run({ ...payload, locale });
-  return db
-    .prepare(
-      'SELECT locale, bride_name, groom_name, event_date, event_location, hero_headline, hero_subtext, brand_text FROM cms_meta_localized WHERE locale = ?'
-    )
-    .get(locale) as CmsMeta;
+  const assignments = keys.map((key, index) => `${key} = $${index + 1}`);
+  const values = keys.map((key) => payload[key as keyof CmsMeta] ?? null);
+  const [updated] = await sql.query(
+    `UPDATE cms_meta_localized SET ${assignments.join(", ")}, updated_at = now() WHERE locale = $${
+      values.length + 1
+    } RETURNING locale, bride_name, groom_name, event_date, event_location, hero_headline, hero_subtext, brand_text`,
+    [...values, locale]
+  );
+  return updated as CmsMeta;
 }
 
-export function listMenu(localeInput?: string): CmsMenuItem[] {
+export async function listMenu(localeInput?: string): Promise<CmsMenuItem[]> {
   const locale = normalizeLocale(localeInput);
-  ensureMenuLocale(locale);
-  return getDb()
-    .prepare('SELECT * FROM cms_menu_items WHERE locale = ? ORDER BY position')
-    .all(locale) as CmsMenuItem[];
+  await ensureMenuLocale(locale);
+  return queryRows<CmsMenuItem>("SELECT * FROM cms_menu_items WHERE locale = $1 ORDER BY position", [locale]);
 }
 
-export function createMenuItem(localeInput: string | undefined, data: { label: string; href: string; position: number; is_visible: number }): CmsMenuItem {
+export async function createMenuItem(
+  localeInput: string | undefined,
+  data: { label: string; href: string; position: number; is_visible: number }
+): Promise<CmsMenuItem> {
   const locale = normalizeLocale(localeInput);
-  ensureMenuLocale(locale);
-  const db = getDb();
-  const result = db
-    .prepare(
-      `INSERT INTO cms_menu_items (label, href, position, is_visible, locale) VALUES (@label, @href, @position, @is_visible, @locale)`
-    )
-    .run({ ...data, locale });
-  return db.prepare('SELECT * FROM cms_menu_items WHERE id = ?').get(result.lastInsertRowid) as CmsMenuItem;
+  await ensureMenuLocale(locale);
+  const [created] = await sql`
+    INSERT INTO cms_menu_items (label, href, position, is_visible, locale)
+    VALUES (${data.label}, ${data.href}, ${data.position}, ${data.is_visible}, ${locale})
+    RETURNING *
+  `;
+  return created as CmsMenuItem;
 }
 
-export function updateMenuItem(id: number, data: Partial<{ label: string; href: string; position: number; is_visible: number }>): CmsMenuItem {
-  const db = getDb();
+export async function updateMenuItem(
+  id: number,
+  data: Partial<{ label: string; href: string; position: number; is_visible: number }>
+): Promise<CmsMenuItem> {
   const keys = Object.keys(data);
-  if (!keys.length) {
-    return db.prepare('SELECT * FROM cms_menu_items WHERE id = ?').get(id) as CmsMenuItem;
+  if (keys.length) {
+    const assignments = keys.map((key, index) => `${key} = $${index + 1}`);
+    const values = keys.map((key) => data[key as keyof typeof data]);
+    await sql.query(`UPDATE cms_menu_items SET ${assignments.join(", ")} WHERE id = $${values.length + 1}`, [...values, id]);
   }
-  const assignments = keys.map((key) => `${key} = @${key}`);
-  db.prepare(`UPDATE cms_menu_items SET ${assignments.join(', ')}, position = COALESCE(@position, position) WHERE id = @id`).run({ ...data, id });
-  return db.prepare('SELECT * FROM cms_menu_items WHERE id = ?').get(id) as CmsMenuItem;
+  const row = await queryRow<CmsMenuItem>("SELECT * FROM cms_menu_items WHERE id = $1", [id]);
+  if (!row) {
+    throw new Error("Menu item not found");
+  }
+  return row;
 }
 
-export function deleteMenuItem(id: number): void {
-  getDb().prepare('DELETE FROM cms_menu_items WHERE id = ?').run(id);
+export async function deleteMenuItem(id: number): Promise<void> {
+  await queryRows("DELETE FROM cms_menu_items WHERE id = $1", [id]);
 }
 
-export function listBlocks(localeInput?: string): CmsBlock[] {
+export async function listBlocks(localeInput?: string): Promise<CmsBlock[]> {
   const locale = normalizeLocale(localeInput);
-  ensureBlocksLocale(locale);
-  const blocks = getDb().prepare('SELECT * FROM cms_blocks WHERE locale = ? ORDER BY position').all(locale) as CmsBlock[];
+  await ensureBlocksLocale(locale);
+  const blocks = await queryRows<CmsBlock>("SELECT * FROM cms_blocks WHERE locale = $1 ORDER BY position", [locale]);
   return filterEditableBlocks(blocks);
 }
 
-export function updateBlock(localeInput: string | undefined, slug: string, data: Partial<Pick<CmsBlock, 'content_html' | 'selector' | 'position' | 'is_visible'>>): CmsBlock {
+export async function updateBlock(
+  localeInput: string | undefined,
+  slug: string,
+  data: Partial<Pick<CmsBlock, "content_html" | "selector" | "position" | "is_visible">>
+): Promise<CmsBlock> {
   assertBlockEditable(slug);
   const locale = normalizeLocale(localeInput);
-  ensureBlocksLocale(locale);
-  const db = getDb();
+  await ensureBlocksLocale(locale);
   const keys = Object.keys(data);
-  if (!keys.length) {
-    return db.prepare('SELECT * FROM cms_blocks WHERE slug = ? AND locale = ?').get(slug, locale) as CmsBlock;
+  if (keys.length) {
+    const assignments = keys.map((key, index) => `${key} = $${index + 1}`);
+    const values = keys.map((key) => data[key as keyof typeof data]);
+    await sql.query(
+      `UPDATE cms_blocks SET ${assignments.join(", ")}, updated_at = now() WHERE slug = $${values.length + 1} AND locale = $${
+        values.length + 2
+      }`,
+      [...values, slug, locale]
+    );
   }
-  const assignments = keys.map((key) => `${key} = @${key}`);
-  db.prepare(
-    `UPDATE cms_blocks SET ${assignments.join(', ')}, updated_at = datetime('now') WHERE slug = @slug AND locale = @locale`
-  ).run({ ...data, slug, locale });
-  return db.prepare('SELECT * FROM cms_blocks WHERE slug = ? AND locale = ?').get(slug, locale) as CmsBlock;
+  const row = await queryRow<CmsBlock>("SELECT * FROM cms_blocks WHERE slug = $1 AND locale = $2", [slug, locale]);
+  if (!row) {
+    throw new Error("Block not found");
+  }
+  return row;
 }
 
-export function createBlock(localeInput: string | undefined, data: { slug: string; selector: string; content_html: string; position?: number; is_visible?: number }): CmsBlock {
+export async function createBlock(
+  localeInput: string | undefined,
+  data: { slug: string; selector: string; content_html: string; position?: number; is_visible?: number }
+): Promise<CmsBlock> {
   assertBlockEditable(data.slug);
   const locale = normalizeLocale(localeInput);
-  ensureBlocksLocale(locale);
-  const db = getDb();
-  db.prepare(
-    `INSERT INTO cms_blocks (slug, selector, content_html, position, is_visible, locale) VALUES (@slug, @selector, @content_html, COALESCE(@position, 0), COALESCE(@is_visible, 1), @locale)`
-  ).run({ ...data, locale });
-  return db.prepare('SELECT * FROM cms_blocks WHERE slug = ? AND locale = ?').get(data.slug, locale) as CmsBlock;
+  await ensureBlocksLocale(locale);
+  const [created] = await sql`
+    INSERT INTO cms_blocks (slug, selector, content_html, position, is_visible, locale)
+    VALUES (${data.slug}, ${data.selector}, ${data.content_html}, ${data.position ?? 0}, ${data.is_visible ?? 1}, ${locale})
+    RETURNING *
+  `;
+  return created as CmsBlock;
 }
 
-export function deleteBlock(localeInput: string | undefined, slug: string): void {
+export async function deleteBlock(localeInput: string | undefined, slug: string): Promise<void> {
   assertBlockEditable(slug);
   const locale = normalizeLocale(localeInput);
-  getDb().prepare('DELETE FROM cms_blocks WHERE slug = ? AND locale = ?').run(slug, locale);
+  await queryRows("DELETE FROM cms_blocks WHERE slug = $1 AND locale = $2", [slug, locale]);
 }
 
-export function listMedia(collection: string, localeInput?: string): CmsMedia[] {
+export async function listMedia(collection: string, localeInput?: string): Promise<CmsMedia[]> {
   const locale = normalizeLocale(localeInput);
-  const db = getDb();
-  return db
-    .prepare('SELECT * FROM cms_media WHERE collection = ? AND locale = ? ORDER BY position, id')
-    .all(collection, locale) as CmsMedia[];
+  return queryRows<CmsMedia>("SELECT * FROM cms_media WHERE collection = $1 AND locale = $2 ORDER BY position, id", [collection, locale]);
 }
 
-export function createMedia(entry: {
+export async function createMedia(entry: {
   collection: string;
   image_url: string;
   title?: string;
@@ -507,135 +548,112 @@ export function createMedia(entry: {
   link_url?: string;
   position?: number;
   locale?: string;
-}): CmsMedia {
+}): Promise<CmsMedia> {
   const locale = normalizeLocale(entry.locale ?? DEFAULT_LOCALE);
-  const db = getDb();
-  const result = db
-    .prepare(
-      `INSERT INTO cms_media (collection, image_url, title, description, link_url, position, locale, updated_at)
-       VALUES (@collection, @image_url, @title, @description, @link_url, COALESCE(@position, 0), @locale, datetime('now'))`
+  const [created] = await sql`
+    INSERT INTO cms_media (collection, image_url, title, description, link_url, position, locale, updated_at)
+    VALUES (
+      ${entry.collection},
+      ${entry.image_url},
+      ${entry.title ?? null},
+      ${entry.description ?? null},
+      ${entry.link_url ?? null},
+      ${entry.position ?? 0},
+      ${locale},
+      now()
     )
-    .run({ ...entry, locale });
-  return db.prepare('SELECT * FROM cms_media WHERE id = ?').get(result.lastInsertRowid) as CmsMedia;
+    RETURNING *
+  `;
+  return created as CmsMedia;
 }
 
-export function updateMedia(id: number, data: Partial<Omit<CmsMedia, 'id' | 'collection'>>): CmsMedia {
+export async function updateMedia(id: number, data: Partial<Omit<CmsMedia, "id" | "collection">>): Promise<CmsMedia> {
   const keys = Object.keys(data);
-  if (!keys.length) {
-    return getDb().prepare('SELECT * FROM cms_media WHERE id = ?').get(id) as CmsMedia;
+  if (keys.length) {
+    const assignments = keys.map((key, index) => `${key} = $${index + 1}`);
+    const values = keys.map((key) => data[key as keyof typeof data]);
+    await sql.query(`UPDATE cms_media SET ${assignments.join(", ")}, updated_at = now() WHERE id = $${values.length + 1}`, [
+      ...values,
+      id,
+    ]);
   }
-  const assignments = keys.map((key) => `${key} = @${key}`);
-  getDb()
-    .prepare(`UPDATE cms_media SET ${assignments.join(', ')}, updated_at = datetime('now') WHERE id = @id`)
-    .run({ ...data, id });
-  return getDb().prepare('SELECT * FROM cms_media WHERE id = ?').get(id) as CmsMedia;
+  const row = await queryRow<CmsMedia>("SELECT * FROM cms_media WHERE id = $1", [id]);
+  if (!row) {
+    throw new Error("Media item not found");
+  }
+  return row;
 }
 
-export function deleteMedia(id: number): void {
-  getDb().prepare('DELETE FROM cms_media WHERE id = ?').run(id);
+export async function deleteMedia(id: number): Promise<void> {
+  await queryRows("DELETE FROM cms_media WHERE id = $1", [id]);
 }
 
-export function seedDefaultMedia(locale?: Locale) {
+export async function seedDefaultMedia(locale?: Locale): Promise<void> {
   const targetLocale = locale ?? DEFAULT_LOCALE;
-  const db = getDb();
-  const collectionHasMedia = (collection: string) => {
-    const existing = db
-      .prepare('SELECT COUNT(1) as count FROM cms_media WHERE locale = ? AND collection = ?')
-      .get(targetLocale, collection) as { count: number };
-    return existing.count > 0;
+  const collectionHasMedia = async (collection: string) => {
+    const existing = await queryRow<{ count: string }>("SELECT COUNT(1) as count FROM cms_media WHERE locale = $1 AND collection = $2", [
+      targetLocale,
+      collection,
+    ]);
+    return Number(existing?.count ?? 0) > 0;
   };
 
   if (targetLocale !== DEFAULT_LOCALE) {
     for (const config of DEFAULT_MEDIA) {
-      if (collectionHasMedia(config.collection)) {
+      if (await collectionHasMedia(config.collection)) {
         continue;
       }
-      db.prepare(
-        `INSERT INTO cms_media (collection, image_url, title, description, link_url, position, locale, created_at, updated_at)
-         SELECT collection, image_url, title, description, link_url, position, @locale, created_at, updated_at
-         FROM cms_media WHERE locale = @source AND collection = @collection`
-      ).run({ locale: targetLocale, source: DEFAULT_LOCALE, collection: config.collection });
+      await sql`
+        INSERT INTO cms_media (collection, image_url, title, description, link_url, position, locale, created_at, updated_at)
+        SELECT collection, image_url, title, description, link_url, position, ${targetLocale}, created_at, updated_at
+        FROM cms_media
+        WHERE locale = ${DEFAULT_LOCALE} AND collection = ${config.collection}
+      `;
     }
   }
 
   const { body } = getTemplateMarkup();
   const $ = load(`<body>${body}</body>`);
-  const stmt = db.prepare(
-    `INSERT INTO cms_media (collection, image_url, position, locale) VALUES (@collection, @image_url, @position, @locale)`
-  );
-  const insertMany = db.transaction(() => {
-    for (const config of DEFAULT_MEDIA) {
-      if (collectionHasMedia(config.collection)) {
+  for (const config of DEFAULT_MEDIA) {
+    if (await collectionHasMedia(config.collection)) {
+      continue;
+    }
+    const nodes = $(config.selector);
+    for (const [index, element] of nodes.toArray().entries()) {
+      const el = $(element);
+      let url = config.attribute ? el.attr(config.attribute) : el.attr("src") || "";
+      if (url?.startsWith("../")) {
+        url = url.replace("../assets", "/template-assets");
+      }
+      if (!url) {
         continue;
       }
-      const nodes = $(config.selector);
-      nodes.each((index, element) => {
-        const el = $(element);
-        let url = config.attribute ? el.attr(config.attribute) : el.attr('src') || '';
-        if (url?.startsWith('../')) {
-          url = url.replace('../assets', '/template-assets');
-        }
-        if (!url) {
-          return;
-        }
-        stmt.run({ collection: config.collection, image_url: url, position: index * 10, locale: targetLocale });
-      });
+      await sql`
+        INSERT INTO cms_media (collection, image_url, position, locale)
+        VALUES (${config.collection}, ${url}, ${index * 10}, ${targetLocale})
+      `;
     }
-  });
-  insertMany();
+  }
 }
 
-function ensureCoupleSection(locale: Locale) {
-  const db = getDb();
-  const row = db.prepare('SELECT locale FROM cms_couple_section WHERE locale = ?').get(locale) as { locale: string } | undefined;
+async function ensureCoupleSection(locale: Locale) {
+  const row = await queryRow<{ locale: string }>("SELECT locale FROM cms_couple_section WHERE locale = $1", [locale]);
   if (row) {
     return;
   }
   if (locale !== DEFAULT_LOCALE) {
-    const fallback = db
-      .prepare('SELECT * FROM cms_couple_section WHERE locale = ?')
-      .get(DEFAULT_LOCALE) as CoupleSection | undefined;
+    const fallback = await queryRow<CoupleSection>("SELECT * FROM cms_couple_section WHERE locale = $1", [DEFAULT_LOCALE]);
     if (fallback) {
-      db.prepare(
-        `INSERT INTO cms_couple_section (
-          locale,
-          left_name,
-          left_bio,
-          left_icon_url,
-          left_facebook_url,
-          left_twitter_url,
-          left_instagram_url,
-          right_name,
-          right_bio,
-          right_icon_url,
-          right_facebook_url,
-          right_twitter_url,
-          right_instagram_url,
-          center_photo_url,
-          center_overlay_url
-        ) VALUES (
-          @locale,
-          @left_name,
-          @left_bio,
-          @left_icon_url,
-          @left_facebook_url,
-          @left_twitter_url,
-          @left_instagram_url,
-          @right_name,
-          @right_bio,
-          @right_icon_url,
-          @right_facebook_url,
-          @right_twitter_url,
-          @right_instagram_url,
-          @center_photo_url,
-          @center_overlay_url
-        )`
-      ).run({ ...fallback, locale });
+      await insertCoupleSection(locale, fallback);
       return;
     }
   }
-  db.prepare(
-    `INSERT INTO cms_couple_section (
+  await insertCoupleSection(locale, DEFAULT_COUPLE);
+}
+
+async function insertCoupleSection(locale: Locale, data: Omit<CoupleSection, "locale">) {
+  await sql`
+    INSERT INTO cms_couple_section (
       locale,
       left_name,
       left_bio,
@@ -652,23 +670,24 @@ function ensureCoupleSection(locale: Locale) {
       center_photo_url,
       center_overlay_url
     ) VALUES (
-      @locale,
-      @left_name,
-      @left_bio,
-      @left_icon_url,
-      @left_facebook_url,
-      @left_twitter_url,
-      @left_instagram_url,
-      @right_name,
-      @right_bio,
-      @right_icon_url,
-      @right_facebook_url,
-      @right_twitter_url,
-      @right_instagram_url,
-      @center_photo_url,
-      @center_overlay_url
-    )`
-  ).run({ locale, ...DEFAULT_COUPLE });
+      ${locale},
+      ${data.left_name},
+      ${data.left_bio},
+      ${data.left_icon_url},
+      ${data.left_facebook_url},
+      ${data.left_twitter_url},
+      ${data.left_instagram_url},
+      ${data.right_name},
+      ${data.right_bio},
+      ${data.right_icon_url},
+      ${data.right_facebook_url},
+      ${data.right_twitter_url},
+      ${data.right_instagram_url},
+      ${data.center_photo_url},
+      ${data.center_overlay_url}
+    )
+    ON CONFLICT(locale) DO NOTHING
+  `;
 }
 
 function parseEventItems(value: string): EventItem[] {
@@ -690,31 +709,28 @@ function parseEventItems(value: string): EventItem[] {
   return DEFAULT_EVENT.items;
 }
 
-function ensureEventSection(locale: Locale) {
-  const db = getDb();
-  const row = db.prepare("SELECT locale FROM cms_event_section WHERE locale = ?").get(locale) as { locale: string } | undefined;
+async function ensureEventSection(locale: Locale) {
+  const row = await queryRow<{ locale: string }>("SELECT locale FROM cms_event_section WHERE locale = $1", [locale]);
   if (row) {
     return;
   }
   if (locale !== DEFAULT_LOCALE) {
-    const fallback = db
-      .prepare("SELECT eyebrow, heading, items_json FROM cms_event_section WHERE locale = ?")
-      .get(DEFAULT_LOCALE) as { eyebrow: string; heading: string; items_json: string } | undefined;
+    const fallback = await queryRow<{ eyebrow: string; heading: string; items_json: string }>(
+      "SELECT eyebrow, heading, items_json FROM cms_event_section WHERE locale = $1",
+      [DEFAULT_LOCALE]
+    );
     if (fallback) {
-      db.prepare(
-        `INSERT INTO cms_event_section (locale, eyebrow, heading, items_json)
-         VALUES (@locale, @eyebrow, @heading, @items_json)`
-      ).run({ ...fallback, locale });
+      await sql`
+        INSERT INTO cms_event_section (locale, eyebrow, heading, items_json)
+        VALUES (${locale}, ${fallback.eyebrow}, ${fallback.heading}, ${fallback.items_json})
+        ON CONFLICT(locale) DO NOTHING
+      `;
       return;
     }
   }
-  db.prepare(
-    `INSERT INTO cms_event_section (locale, eyebrow, heading, items_json)
-     VALUES (@locale, @eyebrow, @heading, @items_json)`
-  ).run({
-    locale,
-    eyebrow: DEFAULT_EVENT.eyebrow,
-    heading: DEFAULT_EVENT.heading,
-    items_json: JSON.stringify(DEFAULT_EVENT.items),
-  });
+  await sql`
+    INSERT INTO cms_event_section (locale, eyebrow, heading, items_json)
+    VALUES (${locale}, ${DEFAULT_EVENT.eyebrow}, ${DEFAULT_EVENT.heading}, ${JSON.stringify(DEFAULT_EVENT.items)})
+    ON CONFLICT(locale) DO NOTHING
+  `;
 }

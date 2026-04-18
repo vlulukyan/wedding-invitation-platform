@@ -5,7 +5,7 @@ Modernizes the scraped Habibi wedding template into a localized, CMS-driven Next
 ## Prerequisites
 
 1. **Node.js 18.x** (matches the locked Next.js toolchain)
-2. **SQLite write access** inside `data/`
+2. **Netlify account + Netlify CLI** for deployment, database, and blob storage
 3. Configure `.env.local`:
    ```env
    SMTP_HOST=
@@ -16,7 +16,9 @@ Modernizes the scraped Habibi wedding template into a localized, CMS-driven Next
    RSVP_FROM_EMAIL=
    RSVP_NOTIFY_EMAIL=
    ADMIN_PASSWORD=choose-a-strong-password
+   NETLIFY_DATABASE_URL=
    ```
+   Netlify creates `NETLIFY_DATABASE_URL` when you initialize the database.
 4. Install deps once:
    ```bash
    npm install
@@ -30,6 +32,41 @@ npm run dev
 
 Visit <http://localhost:3000>. The page is rendered on each request (`dynamic = "force-dynamic"`), so CMS edits appear immediately.
 
+For local testing with Netlify services, use:
+
+```bash
+npx netlify dev
+```
+
+## Netlify deployment
+
+The app now uses Netlify instead of Firebase/local SQLite for production persistence:
+
+- **Netlify Database / Neon Postgres** stores CMS content, RSVP submissions, invitees, event data, menu items, and media records.
+- **Netlify Blobs** stores uploaded admin images.
+- Uploaded image URLs are served through `/api/uploads/...`.
+
+Create and connect the Netlify database once:
+
+```bash
+npx netlify db init
+```
+
+Then set the normal environment variables in Netlify:
+
+```env
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+SMTP_SECURE=false
+RSVP_FROM_EMAIL=
+RSVP_NOTIFY_EMAIL=
+ADMIN_PASSWORD=
+```
+
+`NETLIFY_DATABASE_URL` should be created by Netlify DB. Do not commit the real value.
+
 ### Admin dashboard
 
 - Navigate to <http://localhost:3000/admin/login>
@@ -40,7 +77,7 @@ Visit <http://localhost:3000>. The page is rendered on each request (`dynamic = 
   - **Couple Spotlight**: Edit each partner’s name, bio, social links, icon art, plus the center photo/overlay without touching raw HTML
   - **Navigation Menu**: CRUD operations with visibility & sort order
   - **Content Blocks**: Edit the raw HTML for each major section
-  - **Hero Slider Photos / Blog Cards**: Upload PNG/JPG assets (stored under `public/uploads`, which is ignored by git) or tweak titles/descriptions/links. Files are versioned in SQLite (`cms_media`) per locale and injected via `renderTemplateWithCms`.
+  - **Hero Slider Photos / Blog Cards**: Upload PNG/JPG assets to Netlify Blobs or tweak titles/descriptions/links. Files are tracked in the Netlify database (`cms_media`) per locale and injected via `renderTemplateWithCms`.
   - **Invitees**: Manage invite list, generate shareable `/?invite=CODE` links, record phone confirmations, edit guest counts, and refresh the list on demand.
 - Logout anytime via the header button (clears the admin cookie).
 
@@ -53,13 +90,22 @@ Visit <http://localhost:3000>. The page is rendered on each request (`dynamic = 
 - **RSVP form**:
   - Powered by `RsvpFormHydrator`, which submits to `/api/rsvp`
   - Accepts invite links, e.g. `/?invite=abc123`; the hidden `inviteCode` field ties the submission back to an invitee record via `markInviteeResponse`
-  - Sends email through `nodemailer` and stores the entry in SQLite via `better-sqlite3`
+  - Sends email through `nodemailer` and stores the entry in the Netlify database
 
 ## Media uploads
 
-- Uploaded files are written to `public/uploads`
-- `.gitignore` excludes this directory so local assets aren?t committed accidentally
-- File URLs are referenced inside `cms_media` and served statically by Next.js
+- Uploaded files are written to Netlify Blobs
+- File URLs are referenced inside `cms_media` and served through `/api/uploads/...`
+
+## SQLite to Netlify DB import
+
+After creating the Netlify database, import the old local SQLite rows:
+
+```bash
+NETLIFY_DATABASE_URL="postgres://..." npm run db:import-sqlite -- --replace data/rsvps.sqlite
+```
+
+Use `--replace` for the first migration so Netlify tables are cleared before importing. Without `--replace`, the script merges rows where possible.
 
 ## Localization tips
 
