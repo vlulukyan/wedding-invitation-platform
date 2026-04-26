@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { hasValidSessionFromRequest } from "@/lib/adminAuth";
-import { deleteMedia, updateMedia } from "@/lib/cms";
+import { deleteMedia, getMediaById, updateMedia } from "@/lib/cms";
 import { deleteUploadUrl } from "@/lib/blobStorage";
 
 function unauthorized() {
@@ -29,7 +29,10 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
   if (Number.isNaN(id)) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
-  const current = await updateMedia(id, {});
+  const current = await getMediaById(id);
+  if (!current) {
+    return NextResponse.json({ ok: true });
+  }
   await deleteMedia(id);
   await deleteUploadUrl(current.image_url);
   return NextResponse.json({ ok: true });

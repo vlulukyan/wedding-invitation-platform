@@ -68,7 +68,11 @@ export default async function Home({ searchParams }: PageProps) {
         dangerouslySetInnerHTML={{ __html: renderedBody }}
         suppressHydrationWarning
       />
-      <BackgroundMusic messages={uiMessages.music} />
+      <BackgroundMusic
+        messages={uiMessages.music}
+        gateBackgroundUrl={cms.meta.invitation_gate_background_url}
+        audioSrc={cms.meta.background_music_url}
+      />
       <LanguageSwitcher locale={locale} label={uiMessages.languageLabel} />
       <RsvpFormHydrator locale={locale} messages={uiMessages.rsvp} />
       <TemplateScripts countdownLabels={uiMessages.countdown} />

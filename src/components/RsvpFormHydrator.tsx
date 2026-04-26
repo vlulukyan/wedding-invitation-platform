@@ -61,6 +61,13 @@ export default function RsvpFormHydrator({ locale, messages }: Props) {
       }
     };
 
+    const setText = (selector: string, value: string) => {
+      const element = form.querySelector<HTMLElement>(selector);
+      if (element) {
+        element.textContent = value;
+      }
+    };
+
     const ensurePlaceholderOption = (select: HTMLSelectElement, value: string) => {
       let option = select.querySelector<HTMLOptionElement>("option[disabled]") ?? select.options[0];
       if (!option) {
@@ -92,6 +99,25 @@ export default function RsvpFormHydrator({ locale, messages }: Props) {
       }
     };
 
+    const ensureGuestLabel = (select: HTMLSelectElement, value: string) => {
+      const wrapper = select.parentElement;
+      if (!wrapper) {
+        return;
+      }
+
+      let label = wrapper.querySelector<HTMLElement>(".rsvp-guest-label");
+      if (!label) {
+        label = document.createElement("p");
+        label.className = "rsvp-guest-label";
+        label.style.margin = "0 0 8px";
+        label.style.fontSize = "14px";
+        label.style.lineHeight = "1.5";
+        wrapper.prepend(label);
+      }
+
+      label.textContent = value;
+    };
+
     const localizeForm = () => {
       const title = form.closest("#rsvp")?.querySelector<HTMLHeadingElement>(".wpo-section-title h2");
       if (title) {
@@ -102,9 +128,9 @@ export default function RsvpFormHydrator({ locale, messages }: Props) {
       setPlaceholder("input[name='phone']", messages.phone);
       setLabel("label[for='attend']", messages.yes);
       setLabel("label[for='not']", messages.no);
-
       const guestSelect = form.querySelector<HTMLSelectElement>("select[name='guest']");
       if (guestSelect) {
+        ensureGuestLabel(guestSelect, messages.guestPlaceholder);
         normalizeGuestOptions(guestSelect);
       }
 

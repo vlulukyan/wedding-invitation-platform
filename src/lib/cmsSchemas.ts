@@ -7,6 +7,9 @@ export const cmsMetaSchema = z.object({
   event_location: z.string().min(1).max(200).nullable().optional(),
   hero_headline: z.string().min(1).max(120).nullable().optional(),
   hero_subtext: z.string().min(1).max(200).nullable().optional(),
+  hero_shape_url: z.string().min(1).max(600).nullable().optional(),
+  invitation_gate_background_url: z.string().min(1).max(600).nullable().optional(),
+  background_music_url: z.string().min(1).max(600).nullable().optional(),
   brand_text: z.string().min(1).max(60).nullable().optional(),
 });
 

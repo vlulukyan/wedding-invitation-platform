@@ -1,7 +1,7 @@
 import { load } from "cheerio";
 
 import { queryRow, queryRows, sql } from "@/lib/db";
-import { DEFAULT_LOCALE, Locale, normalizeLocale } from "@/lib/locales";
+import { DEFAULT_LOCALE, Locale, SUPPORTED_LOCALES, normalizeLocale } from "@/lib/locales";
 import { getTemplateMarkup } from "@/lib/template";
 
 export type CmsMeta = {
@@ -12,6 +12,9 @@ export type CmsMeta = {
   event_location: string | null;
   hero_headline: string | null;
   hero_subtext: string | null;
+  hero_shape_url: string | null;
+  invitation_gate_background_url: string | null;
+  background_music_url: string | null;
   brand_text: string | null;
 };
 
@@ -192,6 +195,9 @@ async function ensureMetaLocale(locale: Locale) {
         event_location,
         hero_headline,
         hero_subtext,
+        hero_shape_url,
+        invitation_gate_background_url,
+        background_music_url,
         brand_text
       )
       VALUES (
@@ -202,6 +208,9 @@ async function ensureMetaLocale(locale: Locale) {
         ${fallback.event_location},
         ${fallback.hero_headline},
         ${fallback.hero_subtext},
+        ${fallback.hero_shape_url},
+        ${fallback.invitation_gate_background_url},
+        ${fallback.background_music_url},
         ${fallback.brand_text}
       )
       ON CONFLICT(locale) DO NOTHING
@@ -218,9 +227,24 @@ async function ensureMetaLocale(locale: Locale) {
       event_location,
       hero_headline,
       hero_subtext,
+      hero_shape_url,
+      invitation_gate_background_url,
+      background_music_url,
       brand_text
     )
-    VALUES (${locale}, 'Bride', 'Groom', NULL, NULL, 'Save the Date', NULL, 'Habibi')
+    VALUES (
+      ${locale},
+      'Bride',
+      'Groom',
+      NULL,
+      NULL,
+      'Save the Date',
+      NULL,
+      '/template-assets/images/html/tf/habibi/assets/images/wedding-date/1.png',
+      '/template-assets/images/html/tf/habibi/assets/images/rsvp/img-3.jpg',
+      '/media/perfect.mp3',
+      'Habibi'
+    )
     ON CONFLICT(locale) DO NOTHING
   `;
 }
@@ -275,28 +299,86 @@ export async function getCmsPayload(localeInput?: string): Promise<CmsPayload> {
   await ensureLocale(locale);
   await seedDefaultMedia(locale);
 
-  const meta = await queryRow<CmsMeta>(
-    "SELECT locale, bride_name, groom_name, event_date, event_location, hero_headline, hero_subtext, brand_text FROM cms_meta_localized WHERE locale = $1",
-    [locale]
-  );
+  const meta = await getRawMeta(locale);
   const menu = await queryRows<CmsMenuItem>("SELECT * FROM cms_menu_items WHERE locale = $1 ORDER BY position", [locale]);
   const blocks = await queryRows<CmsBlock>("SELECT * FROM cms_blocks WHERE locale = $1 ORDER BY position", [locale]);
-  const mediaEntries = await queryRows<CmsMedia>("SELECT * FROM cms_media WHERE locale = $1 ORDER BY collection, position, id", [locale]);
-
-  const grouped: Record<string, CmsMedia[]> = {};
-  for (const entry of mediaEntries) {
-    if (!grouped[entry.collection]) {
-      grouped[entry.collection] = [];
-    }
-    grouped[entry.collection].push(entry);
-  }
+  const grouped = await getSharedMediaMap(locale);
 
   const couple = await getCoupleSection(locale);
   const event = await getEventSection(locale);
   if (!meta) {
     throw new Error(`Missing CMS meta for locale ${locale}`);
   }
-  return { meta, menu, blocks: filterEditableBlocks(blocks), media: grouped, couple, event };
+  const sharedMeta = locale === DEFAULT_LOCALE ? meta : await getRawMeta(DEFAULT_LOCALE);
+  return {
+    meta: {
+      ...meta,
+      hero_shape_url: sharedMeta?.hero_shape_url ?? meta.hero_shape_url,
+      invitation_gate_background_url:
+        sharedMeta?.invitation_gate_background_url ?? meta.invitation_gate_background_url,
+      background_music_url: sharedMeta?.background_music_url ?? meta.background_music_url,
+    },
+    menu,
+    blocks: filterEditableBlocks(blocks),
+    media: grouped,
+    couple,
+    event,
+  };
+}
+
+function mergeSharedMediaRows(locale: Locale, sharedRows: CmsMedia[], localeRows: CmsMedia[]) {
+  if (locale === DEFAULT_LOCALE || !sharedRows.length) {
+    return sharedRows.length ? sharedRows : localeRows;
+  }
+
+  return sharedRows.map((sharedRow, index) => {
+    const localizedRow = localeRows[index];
+    return {
+      ...(localizedRow ?? sharedRow),
+      image_url: sharedRow.image_url,
+      position: sharedRow.position,
+      collection: sharedRow.collection,
+      locale,
+    } satisfies CmsMedia;
+  });
+}
+
+async function getSharedMediaMap(locale: Locale) {
+  const defaultRows = await queryRows<CmsMedia>("SELECT * FROM cms_media WHERE locale = $1 ORDER BY collection, position, id", [DEFAULT_LOCALE]);
+  const localeRows =
+    locale === DEFAULT_LOCALE
+      ? defaultRows
+      : await queryRows<CmsMedia>("SELECT * FROM cms_media WHERE locale = $1 ORDER BY collection, position, id", [locale]);
+
+  const defaultByCollection = new Map<string, CmsMedia[]>();
+  const localeByCollection = new Map<string, CmsMedia[]>();
+
+  for (const row of defaultRows) {
+    const items = defaultByCollection.get(row.collection) ?? [];
+    items.push(row);
+    defaultByCollection.set(row.collection, items);
+  }
+
+  for (const row of localeRows) {
+    const items = localeByCollection.get(row.collection) ?? [];
+    items.push(row);
+    localeByCollection.set(row.collection, items);
+  }
+
+  const collections = new Set([...defaultByCollection.keys(), ...localeByCollection.keys()]);
+  const grouped: Record<string, CmsMedia[]> = {};
+  for (const collection of collections) {
+    grouped[collection] = mergeSharedMediaRows(locale, defaultByCollection.get(collection) ?? [], localeByCollection.get(collection) ?? []);
+  }
+
+  return grouped;
+}
+
+async function getRawMeta(locale: Locale) {
+  return queryRow<CmsMeta>(
+    "SELECT locale, bride_name, groom_name, event_date, event_location, hero_headline, hero_subtext, hero_shape_url, invitation_gate_background_url, background_music_url, brand_text FROM cms_meta_localized WHERE locale = $1",
+    [locale]
+  );
 }
 
 function filterEditableBlocks(blocks: CmsBlock[]) {
@@ -335,7 +417,38 @@ export async function getCoupleSection(localeInput?: string): Promise<CoupleSect
   if (!row) {
     throw new Error(`Missing couple section for locale ${locale}`);
   }
-  return row;
+  if (locale === DEFAULT_LOCALE) {
+    return row;
+  }
+
+  const shared = await queryRow<CoupleSection>(
+    `SELECT
+      locale,
+      left_name,
+      left_bio,
+      left_icon_url,
+      left_facebook_url,
+      left_twitter_url,
+      left_instagram_url,
+      right_name,
+      right_bio,
+      right_icon_url,
+      right_facebook_url,
+      right_twitter_url,
+      right_instagram_url,
+      center_photo_url,
+      center_overlay_url
+    FROM cms_couple_section WHERE locale = $1`,
+    [DEFAULT_LOCALE]
+  );
+
+  return {
+    ...row,
+    left_icon_url: shared?.left_icon_url ?? row.left_icon_url,
+    right_icon_url: shared?.right_icon_url ?? row.right_icon_url,
+    center_photo_url: shared?.center_photo_url ?? row.center_photo_url,
+    center_overlay_url: shared?.center_overlay_url ?? row.center_overlay_url,
+  };
 }
 
 export async function updateCoupleSection(localeInput: string | undefined, payload: Partial<CoupleSection>): Promise<CoupleSection> {
@@ -357,14 +470,27 @@ export async function updateCoupleSection(localeInput: string | undefined, paylo
     "center_photo_url",
     "center_overlay_url",
   ];
-  const keys = Object.keys(payload).filter((key) => allowedKeys.includes(key as keyof CoupleSection));
-  if (keys.length) {
-    const assignments = keys.map((key, index) => `${key} = $${index + 1}`);
-    const values = keys.map((key) => payload[key as keyof CoupleSection] ?? null);
-    await sql.query(
-      `UPDATE cms_couple_section SET ${assignments.join(", ")}, updated_at = now() WHERE locale = $${values.length + 1}`,
-      [...values, locale]
-    );
+  const sharedKeys: Array<keyof CoupleSection> = ["left_icon_url", "right_icon_url", "center_photo_url", "center_overlay_url"];
+  const keys = Object.keys(payload).filter((key) => allowedKeys.includes(key as keyof CoupleSection)) as Array<keyof CoupleSection>;
+  const localeKeys = keys.filter((key) => !sharedKeys.includes(key));
+  const sharedPayloadKeys = keys.filter((key) => sharedKeys.includes(key));
+
+  if (localeKeys.length) {
+    const assignments = localeKeys.map((key, index) => `${key} = $${index + 1}`);
+    const values = localeKeys.map((key) => payload[key] ?? null);
+    await sql.query(`UPDATE cms_couple_section SET ${assignments.join(", ")}, updated_at = now() WHERE locale = $${values.length + 1}`, [
+      ...values,
+      locale,
+    ]);
+  }
+
+  if (sharedPayloadKeys.length) {
+    const assignments = sharedPayloadKeys.map((key, index) => `${key} = $${index + 1}`);
+    const values = sharedPayloadKeys.map((key) => payload[key] ?? null);
+    await sql.query(`UPDATE cms_couple_section SET ${assignments.join(", ")}, updated_at = now() WHERE locale = $${values.length + 1}`, [
+      ...values,
+      DEFAULT_LOCALE,
+    ]);
   }
   return getCoupleSection(locale);
 }
@@ -379,11 +505,26 @@ export async function getEventSection(localeInput?: string): Promise<EventSectio
   if (!row) {
     throw new Error(`Missing event section for locale ${locale}`);
   }
+  const items = parseEventItems(row.items_json);
+  if (locale === DEFAULT_LOCALE) {
+    return {
+      locale: row.locale,
+      eyebrow: row.eyebrow,
+      heading: row.heading,
+      items,
+    };
+  }
+
+  const sharedRow = await queryRow<{ items_json: string }>("SELECT items_json FROM cms_event_section WHERE locale = $1", [DEFAULT_LOCALE]);
+  const sharedItems = sharedRow ? parseEventItems(sharedRow.items_json) : [];
   return {
     locale: row.locale,
     eyebrow: row.eyebrow,
     heading: row.heading,
-    items: parseEventItems(row.items_json),
+    items: items.map((item, index) => ({
+      ...item,
+      image_url: sharedItems[index]?.image_url ?? item.image_url,
+    })),
   };
 }
 
@@ -401,7 +542,26 @@ export async function updateEventSection(
     data.heading = payload.heading;
   }
   if (payload.items) {
-    data.items_json = JSON.stringify(payload.items);
+    const items = payload.items;
+    if (locale === DEFAULT_LOCALE) {
+      data.items_json = JSON.stringify(items);
+    } else {
+      const currentLocaleRow = await queryRow<{ items_json: string }>("SELECT items_json FROM cms_event_section WHERE locale = $1", [locale]);
+      const currentDefaultRow = await queryRow<{ items_json: string }>("SELECT items_json FROM cms_event_section WHERE locale = $1", [DEFAULT_LOCALE]);
+      const localeItems = parseEventItems(currentLocaleRow?.items_json ?? JSON.stringify(DEFAULT_EVENT.items)).map((existing, index) => ({
+        ...items[index],
+        image_url: existing.image_url,
+      }));
+      const defaultItems = parseEventItems(currentDefaultRow?.items_json ?? JSON.stringify(DEFAULT_EVENT.items)).map((existing, index) => ({
+        ...existing,
+        image_url: items[index]?.image_url ?? existing.image_url,
+      }));
+      data.items_json = JSON.stringify(localeItems);
+      await sql.query("UPDATE cms_event_section SET items_json = $1, updated_at = now() WHERE locale = $2", [
+        JSON.stringify(defaultItems),
+        DEFAULT_LOCALE,
+      ]);
+    }
   }
   const keys = Object.keys(data);
   if (keys.length) {
@@ -420,24 +580,59 @@ export async function updateCmsMeta(localeInput: string | undefined, payload: Pa
   await ensureMetaLocale(locale);
   const keys = Object.keys(payload).filter((key) => key !== "locale");
   if (!keys.length) {
-    const row = await queryRow<CmsMeta>(
-      "SELECT locale, bride_name, groom_name, event_date, event_location, hero_headline, hero_subtext, brand_text FROM cms_meta_localized WHERE locale = $1",
-      [locale]
-    );
+    const row = await getRawMeta(locale);
     if (!row) {
       throw new Error(`Missing CMS meta for locale ${locale}`);
     }
-    return row;
+    if (locale === DEFAULT_LOCALE) {
+      return row;
+    }
+    const shared = await getRawMeta(DEFAULT_LOCALE);
+    return {
+      ...row,
+      hero_shape_url: shared?.hero_shape_url ?? row.hero_shape_url,
+      invitation_gate_background_url:
+        shared?.invitation_gate_background_url ?? row.invitation_gate_background_url,
+      background_music_url: shared?.background_music_url ?? row.background_music_url,
+    };
   }
-  const assignments = keys.map((key, index) => `${key} = $${index + 1}`);
-  const values = keys.map((key) => payload[key as keyof CmsMeta] ?? null);
-  const [updated] = await sql.query(
-    `UPDATE cms_meta_localized SET ${assignments.join(", ")}, updated_at = now() WHERE locale = $${
-      values.length + 1
-    } RETURNING locale, bride_name, groom_name, event_date, event_location, hero_headline, hero_subtext, brand_text`,
-    [...values, locale]
-  );
-  return updated as CmsMeta;
+  const sharedKeys: Array<keyof CmsMeta> = ["hero_shape_url", "invitation_gate_background_url", "background_music_url"];
+  const localeKeys = keys.filter((key) => !sharedKeys.includes(key as keyof CmsMeta));
+  const sharedPayloadKeys = keys.filter((key) => sharedKeys.includes(key as keyof CmsMeta));
+
+  if (localeKeys.length) {
+    const assignments = localeKeys.map((key, index) => `${key} = $${index + 1}`);
+    const values = localeKeys.map((key) => payload[key as keyof CmsMeta] ?? null);
+    await sql.query(`UPDATE cms_meta_localized SET ${assignments.join(", ")}, updated_at = now() WHERE locale = $${values.length + 1}`, [
+      ...values,
+      locale,
+    ]);
+  }
+
+  if (sharedPayloadKeys.length) {
+    const assignments = sharedPayloadKeys.map((key, index) => `${key} = $${index + 1}`);
+    const values = sharedPayloadKeys.map((key) => payload[key as keyof CmsMeta] ?? null);
+    await sql.query(`UPDATE cms_meta_localized SET ${assignments.join(", ")}, updated_at = now() WHERE locale = $${values.length + 1}`, [
+      ...values,
+      DEFAULT_LOCALE,
+    ]);
+  }
+
+  const updated = await getRawMeta(locale);
+  if (!updated) {
+    throw new Error(`Missing CMS meta for locale ${locale}`);
+  }
+  if (locale === DEFAULT_LOCALE) {
+    return updated;
+  }
+  const shared = await getRawMeta(DEFAULT_LOCALE);
+  return {
+    ...updated,
+    hero_shape_url: shared?.hero_shape_url ?? updated.hero_shape_url,
+    invitation_gate_background_url:
+      shared?.invitation_gate_background_url ?? updated.invitation_gate_background_url,
+    background_music_url: shared?.background_music_url ?? updated.background_music_url,
+  };
 }
 
 export async function listMenu(localeInput?: string): Promise<CmsMenuItem[]> {
@@ -537,7 +732,8 @@ export async function deleteBlock(localeInput: string | undefined, slug: string)
 
 export async function listMedia(collection: string, localeInput?: string): Promise<CmsMedia[]> {
   const locale = normalizeLocale(localeInput);
-  return queryRows<CmsMedia>("SELECT * FROM cms_media WHERE collection = $1 AND locale = $2 ORDER BY position, id", [collection, locale]);
+  const grouped = await getSharedMediaMap(locale);
+  return grouped[collection] ?? [];
 }
 
 export async function createMedia(entry: {
@@ -550,21 +746,25 @@ export async function createMedia(entry: {
   locale?: string;
 }): Promise<CmsMedia> {
   const locale = normalizeLocale(entry.locale ?? DEFAULT_LOCALE);
-  const [created] = await sql`
-    INSERT INTO cms_media (collection, image_url, title, description, link_url, position, locale, updated_at)
-    VALUES (
-      ${entry.collection},
-      ${entry.image_url},
-      ${entry.title ?? null},
-      ${entry.description ?? null},
-      ${entry.link_url ?? null},
-      ${entry.position ?? 0},
-      ${locale},
-      now()
-    )
-    RETURNING *
-  `;
-  return created as CmsMedia;
+  const createdByLocale = new Map<Locale, CmsMedia>();
+  for (const targetLocale of SUPPORTED_LOCALES) {
+    const [created] = await sql`
+      INSERT INTO cms_media (collection, image_url, title, description, link_url, position, locale, updated_at)
+      VALUES (
+        ${entry.collection},
+        ${entry.image_url},
+        ${entry.title ?? null},
+        ${entry.description ?? null},
+        ${entry.link_url ?? null},
+        ${entry.position ?? 0},
+        ${targetLocale},
+        now()
+      )
+      RETURNING *
+    `;
+    createdByLocale.set(targetLocale, created as CmsMedia);
+  }
+  return createdByLocale.get(locale) ?? createdByLocale.get(DEFAULT_LOCALE)!;
 }
 
 export async function updateMedia(id: number, data: Partial<Omit<CmsMedia, "id" | "collection">>): Promise<CmsMedia> {
@@ -584,8 +784,20 @@ export async function updateMedia(id: number, data: Partial<Omit<CmsMedia, "id" 
   return row;
 }
 
+export async function getMediaById(id: number): Promise<CmsMedia | undefined> {
+  return queryRow<CmsMedia>("SELECT * FROM cms_media WHERE id = $1", [id]);
+}
+
 export async function deleteMedia(id: number): Promise<void> {
-  await queryRows("DELETE FROM cms_media WHERE id = $1", [id]);
+  const current = await getMediaById(id);
+  if (!current) {
+    return;
+  }
+  await queryRows("DELETE FROM cms_media WHERE collection = $1 AND image_url = $2 AND position = $3", [
+    current.collection,
+    current.image_url,
+    current.position,
+  ]);
 }
 
 export async function seedDefaultMedia(locale?: Locale): Promise<void> {

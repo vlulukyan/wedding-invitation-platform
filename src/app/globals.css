@@ -423,10 +423,27 @@ a {
 }
 
 @media (max-width: 768px) {
+  .template-page .wpo-hero-slider,
+  .template-page .wpo-hero-slider .swiper-container,
+  .template-page .wpo-hero-slider .swiper-wrapper,
+  .template-page .wpo-hero-slider .swiper-slide,
+  .template-page .wpo-hero-slider .slide-inner {
+    height: min(78vw, 420px) !important;
+    min-height: 0 !important;
+  }
+
+  .template-page .wpo-hero-slider .slide-inner {
+    background-size: cover !important;
+    background-repeat: no-repeat !important;
+    background-position: center center !important;
+    background-color: #eef2fb;
+  }
+
   .music-toggle {
     bottom: 1rem;
     right: 1rem;
   }
+
   .language-toggle {
     bottom: 1rem;
     left: 1rem;

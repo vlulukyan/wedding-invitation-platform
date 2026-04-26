@@ -260,10 +260,91 @@ type MetaFormProps = {
 function MetaForm({ locale, meta, onPersist, onError }: MetaFormProps) {
   const [form, setForm] = useState(meta);
   const [saving, setSaving] = useState(false);
+  const [uploadingShape, setUploadingShape] = useState(false);
+  const [uploadingGateBackground, setUploadingGateBackground] = useState(false);
+  const [uploadingMusic, setUploadingMusic] = useState(false);
+  const shapeInputRef = useRef<HTMLInputElement | null>(null);
+  const gateBackgroundInputRef = useRef<HTMLInputElement | null>(null);
+  const musicInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setForm(meta);
   }, [meta]);
+
+  const handleShapeUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+
+    setUploadingShape(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetch("/api/uploads", { method: "POST", body: formData });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.url) {
+        throw new Error(data?.error ?? "Unable to upload image");
+      }
+      setForm((prev) => ({ ...prev, hero_shape_url: data.url }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to upload image";
+      onError(message);
+    } finally {
+      setUploadingShape(false);
+    }
+  };
+
+  const handleGateBackgroundUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+
+    setUploadingGateBackground(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetch("/api/uploads", { method: "POST", body: formData });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.url) {
+        throw new Error(data?.error ?? "Unable to upload image");
+      }
+      setForm((prev) => ({ ...prev, invitation_gate_background_url: data.url }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to upload image";
+      onError(message);
+    } finally {
+      setUploadingGateBackground(false);
+    }
+  };
+
+  const handleMusicUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+
+    setUploadingMusic(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetch("/api/uploads", { method: "POST", body: formData });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.url) {
+        throw new Error(data?.error ?? "Unable to upload audio");
+      }
+      setForm((prev) => ({ ...prev, background_music_url: data.url }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to upload audio";
+      onError(message);
+    } finally {
+      setUploadingMusic(false);
+    }
+  };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -313,6 +394,87 @@ function MetaForm({ locale, meta, onPersist, onError }: MetaFormProps) {
             {field.key === "event_date" && <small className="muted">Used by the countdown. Example: 2026-11-15 20:30</small>}
           </label>
         ))}
+        <label className="admin-field">
+          <span>Hero Shape Image URL</span>
+          <div className="upload-row">
+            <input
+              type="text"
+              value={form.hero_shape_url ?? ""}
+              onChange={(e) => setForm({ ...form, hero_shape_url: e.target.value })}
+              placeholder="/uploads/rings.png"
+            />
+            <button
+              type="button"
+              className="admin-outline"
+              onClick={() => shapeInputRef.current?.click()}
+              disabled={uploadingShape}
+            >
+              {uploadingShape ? "Uploading..." : "Upload"}
+            </button>
+            <input
+              ref={shapeInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={handleShapeUpload}
+            />
+          </div>
+          <small className="muted">This replaces the small yellow flower under the names.</small>
+        </label>
+        <label className="admin-field">
+          <span>Invitation Gate Background URL</span>
+          <div className="upload-row">
+            <input
+              type="text"
+              value={form.invitation_gate_background_url ?? ""}
+              onChange={(e) => setForm({ ...form, invitation_gate_background_url: e.target.value })}
+              placeholder="/uploads/invitation-background.jpg"
+            />
+            <button
+              type="button"
+              className="admin-outline"
+              onClick={() => gateBackgroundInputRef.current?.click()}
+              disabled={uploadingGateBackground}
+            >
+              {uploadingGateBackground ? "Uploading..." : "Upload"}
+            </button>
+            <input
+              ref={gateBackgroundInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={handleGateBackgroundUpload}
+            />
+          </div>
+          <small className="muted">This is the background image on the first screen with the button to open the invitation.</small>
+        </label>
+        <label className="admin-field">
+          <span>Background Music URL</span>
+          <div className="upload-row">
+            <input
+              type="text"
+              value={form.background_music_url ?? ""}
+              onChange={(e) => setForm({ ...form, background_music_url: e.target.value })}
+              placeholder="/uploads/background-music.mp3"
+            />
+            <button
+              type="button"
+              className="admin-outline"
+              onClick={() => musicInputRef.current?.click()}
+              disabled={uploadingMusic}
+            >
+              {uploadingMusic ? "Uploading..." : "Upload"}
+            </button>
+            <input
+              ref={musicInputRef}
+              type="file"
+              accept="audio/*"
+              style={{ display: "none" }}
+              onChange={handleMusicUpload}
+            />
+          </div>
+          <small className="muted">This audio is shared for all languages and used by the play music button.</small>
+        </label>
       </div>
       <button type="submit" disabled={saving}>
         {saving ? "Saving..." : "Save"}

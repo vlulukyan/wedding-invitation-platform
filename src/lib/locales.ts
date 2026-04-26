@@ -1,7 +1,7 @@
 export const SUPPORTED_LOCALES = ["en", "hy", "de"] as const;
 export type Locale = (typeof SUPPORTED_LOCALES)[number];
 export const DEFAULT_LOCALE: Locale = "en";
-export const PUBLIC_LOCALES = ["hy", "de"] as const satisfies readonly Locale[];
+export const PUBLIC_LOCALES = ["en", "hy", "de"] as const satisfies readonly Locale[];
 export const DEFAULT_PUBLIC_LOCALE: Locale = "hy";
 
 export function normalizeLocale(locale?: string | null): Locale {

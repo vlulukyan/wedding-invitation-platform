@@ -32,6 +32,9 @@ function applyMeta($: CheerioAPI, meta: CmsMeta) {
   heroSection.find("h2").first().text(coupleName);
   heroSection.find("span").first().text(meta.hero_headline ?? "Save the Date");
   heroSection.find("p").first().text(meta.hero_subtext ?? meta.event_date ?? "We are getting married");
+  if (meta.hero_shape_url) {
+    heroSection.find(".shape img").first().attr("src", meta.hero_shape_url);
+  }
   if (meta.event_date) {
     heroSection.find("#clock").first().attr("id", "cms-countdown").attr("data-countdown-target", meta.event_date);
   }

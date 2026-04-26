@@ -91,10 +91,16 @@ async function initialize() {
       event_location TEXT,
       hero_headline TEXT,
       hero_subtext TEXT,
+      hero_shape_url TEXT,
+      invitation_gate_background_url TEXT,
+      background_music_url TEXT,
       brand_text TEXT,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `;
+  await sql`ALTER TABLE cms_meta_localized ADD COLUMN IF NOT EXISTS hero_shape_url TEXT`;
+  await sql`ALTER TABLE cms_meta_localized ADD COLUMN IF NOT EXISTS invitation_gate_background_url TEXT`;
+  await sql`ALTER TABLE cms_meta_localized ADD COLUMN IF NOT EXISTS background_music_url TEXT`;
   await sql`
     INSERT INTO cms_meta_localized (
       locale,
@@ -104,6 +110,9 @@ async function initialize() {
       event_location,
       hero_headline,
       hero_subtext,
+      hero_shape_url,
+      invitation_gate_background_url,
+      background_music_url,
       brand_text
     )
     VALUES (
@@ -114,9 +123,27 @@ async function initialize() {
       'Yerevan, Armenia',
       'Save the Date',
       'We Are Getting Married November 15, 2026',
+      '/template-assets/images/html/tf/habibi/assets/images/wedding-date/1.png',
+      '/template-assets/images/html/tf/habibi/assets/images/rsvp/img-3.jpg',
+      '/media/perfect.mp3',
       'Habibi'
     )
     ON CONFLICT(locale) DO NOTHING
+  `;
+  await sql`
+    UPDATE cms_meta_localized
+    SET hero_shape_url = '/template-assets/images/html/tf/habibi/assets/images/wedding-date/1.png'
+    WHERE hero_shape_url IS NULL
+  `;
+  await sql`
+    UPDATE cms_meta_localized
+    SET invitation_gate_background_url = '/template-assets/images/html/tf/habibi/assets/images/rsvp/img-3.jpg'
+    WHERE invitation_gate_background_url IS NULL
+  `;
+  await sql`
+    UPDATE cms_meta_localized
+    SET background_music_url = '/media/perfect.mp3'
+    WHERE background_music_url IS NULL
   `;
 
   await sql`
