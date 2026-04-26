@@ -80,8 +80,8 @@ export async function saveUpload(key: string, value: Blob) {
 
   const filePath = resolveLocalUploadPath(key);
   await mkdir(path.dirname(filePath), { recursive: true });
-  const buffer = Buffer.from(await value.arrayBuffer());
-  await writeFile(filePath, buffer);
+  const data = new Uint8Array(await value.arrayBuffer());
+  await writeFile(filePath, data);
   return `${PUBLIC_UPLOAD_PREFIX}${key}`;
 }
 
