@@ -1,16 +1,31 @@
 import { z } from "zod";
 
+const optionalTextField = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .nullable()
+    .optional()
+    .transform((value) => {
+      if (!value) {
+        return null;
+      }
+      const trimmed = value.trim();
+      return trimmed.length ? trimmed : null;
+    });
+
 export const cmsMetaSchema = z.object({
-  bride_name: z.string().min(1).max(120),
-  groom_name: z.string().min(1).max(120),
-  event_date: z.string().min(1).max(120).nullable().optional(),
-  event_location: z.string().min(1).max(200).nullable().optional(),
-  hero_headline: z.string().min(1).max(120).nullable().optional(),
-  hero_subtext: z.string().min(1).max(200).nullable().optional(),
-  hero_shape_url: z.string().min(1).max(600).nullable().optional(),
-  invitation_gate_background_url: z.string().min(1).max(600).nullable().optional(),
-  background_music_url: z.string().min(1).max(600).nullable().optional(),
-  brand_text: z.string().min(1).max(60).nullable().optional(),
+  bride_name: z.string().trim().min(1).max(120),
+  groom_name: z.string().trim().min(1).max(120),
+  event_date: optionalTextField(120),
+  event_location: optionalTextField(200),
+  hero_headline: optionalTextField(200),
+  hero_subtext: optionalTextField(300),
+  hero_shape_url: optionalTextField(600),
+  invitation_gate_background_url: optionalTextField(600),
+  background_music_url: optionalTextField(600),
+  brand_text: optionalTextField(60),
 });
 
 export const cmsMetaUpdateSchema = cmsMetaSchema.partial();

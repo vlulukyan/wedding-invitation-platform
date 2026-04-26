@@ -22,8 +22,18 @@ export async function PUT(request: NextRequest) {
     return unauthorized();
   }
   const data = await request.json().catch(() => ({}));
-  const parsed = cmsMetaUpdateSchema.parse(data);
+  const result = cmsMetaUpdateSchema.safeParse(data);
+  if (!result.success) {
+    const issue = result.error.issues[0];
+    const field = issue?.path.join(".");
+    return NextResponse.json(
+      {
+        error: field ? `${field}: ${issue.message}` : issue?.message ?? "Invalid meta data",
+      },
+      { status: 400 }
+    );
+  }
   const locale = request.nextUrl.searchParams.get("locale") || undefined;
-  const updated = await updateCmsMeta(locale, parsed);
+  const updated = await updateCmsMeta(locale, result.data);
   return NextResponse.json({ meta: updated });
 }

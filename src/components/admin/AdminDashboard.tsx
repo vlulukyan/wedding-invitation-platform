@@ -14,6 +14,16 @@ const LOCALE_LABELS: Record<Locale, string> = {
   de: "German",
 };
 
+const META_FIELD_LIMITS = {
+  bride_name: 120,
+  groom_name: 120,
+  event_date: 120,
+  event_location: 200,
+  hero_headline: 200,
+  hero_subtext: 300,
+  brand_text: 60,
+} as const;
+
 type CmsMediaMap = Record<string, CmsMedia[]>;
 
 type Props = {
@@ -389,6 +399,7 @@ function MetaForm({ locale, meta, onPersist, onError }: MetaFormProps) {
               placeholder={field.key === "event_date" ? "2026-11-15 20:30" : undefined}
               value={(form as any)[field.key] ?? ""}
               onChange={(e) => setForm({ ...form, [field.key]: e.target.value })}
+              maxLength={META_FIELD_LIMITS[field.key]}
               required={field.key === "bride_name" || field.key === "groom_name"}
             />
             {field.key === "event_date" && <small className="muted">Used by the countdown. Example: 2026-11-15 20:30</small>}
@@ -401,6 +412,7 @@ function MetaForm({ locale, meta, onPersist, onError }: MetaFormProps) {
               type="text"
               value={form.hero_shape_url ?? ""}
               onChange={(e) => setForm({ ...form, hero_shape_url: e.target.value })}
+              maxLength={600}
               placeholder="/uploads/rings.png"
             />
             <button
@@ -428,6 +440,7 @@ function MetaForm({ locale, meta, onPersist, onError }: MetaFormProps) {
               type="text"
               value={form.invitation_gate_background_url ?? ""}
               onChange={(e) => setForm({ ...form, invitation_gate_background_url: e.target.value })}
+              maxLength={600}
               placeholder="/uploads/invitation-background.jpg"
             />
             <button
@@ -455,6 +468,7 @@ function MetaForm({ locale, meta, onPersist, onError }: MetaFormProps) {
               type="text"
               value={form.background_music_url ?? ""}
               onChange={(e) => setForm({ ...form, background_music_url: e.target.value })}
+              maxLength={600}
               placeholder="/uploads/background-music.mp3"
             />
             <button
