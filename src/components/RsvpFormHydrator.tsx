@@ -119,9 +119,19 @@ export default function RsvpFormHydrator({ locale, messages }: Props) {
     };
 
     const localizeForm = () => {
-      const title = form.closest("#rsvp")?.querySelector<HTMLHeadingElement>(".wpo-section-title h2");
+      const titleWrapper = form.closest("#rsvp")?.querySelector<HTMLElement>(".wpo-section-title");
+      const title = titleWrapper?.querySelector<HTMLHeadingElement>("h2");
       if (title) {
         title.textContent = messages.title;
+      }
+      if (titleWrapper) {
+        let deadline = titleWrapper.querySelector<HTMLParagraphElement>(".rsvp-deadline-message");
+        if (!deadline) {
+          deadline = document.createElement("p");
+          deadline.className = "rsvp-deadline-message";
+          title?.after(deadline);
+        }
+        deadline.textContent = messages.deadline;
       }
 
       setPlaceholder("input[name='name']", messages.name);
@@ -130,7 +140,7 @@ export default function RsvpFormHydrator({ locale, messages }: Props) {
       setLabel("label[for='not']", messages.no);
       const guestSelect = form.querySelector<HTMLSelectElement>("select[name='guest']");
       if (guestSelect) {
-        ensureGuestLabel(guestSelect, messages.guestPlaceholder);
+        ensureGuestLabel(guestSelect, messages.guestHelp);
         normalizeGuestOptions(guestSelect);
       }
 

@@ -488,6 +488,13 @@ a {
   color: #b3261e;
 }
 
+#rsvp .rsvp-deadline-message {
+  margin: 0.5rem 0 0;
+  color: #6f5c4b;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
 #rsvp .submit-area {
   position: relative;
   display: inline-flex;
