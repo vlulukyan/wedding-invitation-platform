@@ -94,8 +94,8 @@ const messages = {
       enable: "Aktiviere den Ton, um die Musik zu hören.",
     },
     rsvp: {
-      title: "Nehmen Sie teil?",
-      deadline: "Bitte antworten Sie bis zum 30. Juni bezüglich Ihrer Teilnahme.",
+      title: "Nimmst du teil?",
+      deadline: "Bitte antworte bis zum 30. Juni, ob du teilnimmst.",
       name: "Name",
       phone: "Telefon",
       yes: "Ja, ich bin dabei",
