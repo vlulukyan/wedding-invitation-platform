@@ -25,13 +25,6 @@ function generateCode() {
   return crypto.randomBytes(6).toString("hex");
 }
 
-function splitName(name: string) {
-  const parts = name.trim().split(/\s+/);
-  const first_name = parts.shift() ?? name.trim();
-  const last_name = parts.length ? parts.join(" ") : undefined;
-  return { first_name, last_name };
-}
-
 export async function listInvitees(): Promise<Invitee[]> {
   return queryRows<Invitee>("SELECT * FROM invitees ORDER BY created_at DESC");
 }
@@ -110,7 +103,6 @@ export async function saveInviteeResponseFromRsvp(payload: RsvpPayload) {
   const status: InviteeStatus = attending ? "accepted" : "declined";
   const response = {
     email: null,
-    phone: payload.phone ?? null,
     attending: attending ? 1 : 0,
     guest_count: attending ? payload.guestCount : 0,
     response_note: null,
@@ -123,8 +115,8 @@ export async function saveInviteeResponseFromRsvp(payload: RsvpPayload) {
   }
 
   const invitee = await createInvitee({
-    ...splitName(payload.name),
-    phone: payload.phone,
+    first_name: payload.name,
+    last_name: payload.lastName,
     locale: payload.locale as Locale | undefined,
   });
 

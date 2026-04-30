@@ -4,14 +4,13 @@ export const rsvpSchema = z.object({
   name: z
     .string()
     .trim()
-    .min(1, { message: "Please share your full name." })
+    .min(1, { message: "Please share your name." })
     .max(120, { message: "Name must be 120 characters or fewer." }),
-  phone: z
+  lastName: z
     .string()
     .trim()
-    .max(40, { message: "Phone number must be 40 characters or fewer." })
-    .optional()
-    .transform((value) => (value && value.length ? value : undefined)),
+    .min(1, { message: "Please share your last name." })
+    .max(120, { message: "Last name must be 120 characters or fewer." }),
   attending: z.enum(["yes", "no"], {
     errorMap: () => ({ message: "Choose whether you can attend." }),
   }),

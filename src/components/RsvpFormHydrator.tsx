@@ -25,27 +25,30 @@ export default function RsvpFormHydrator({ locale, messages }: Props) {
     const loader = form.querySelector<HTMLDivElement>("#c-loader");
     const submitButton = form.querySelector<HTMLButtonElement>("button[type='submit']");
 
-    const ensurePhoneInput = () => {
-      let phoneInput = form.querySelector<HTMLInputElement>("input[name='phone']");
-      if (phoneInput) {
-        return phoneInput;
+    const ensureLastNameInput = () => {
+      form.querySelector<HTMLInputElement>("input[name='phone']")?.parentElement?.remove();
+
+      let lastNameInput = form.querySelector<HTMLInputElement>("input[name='lastName']");
+      if (lastNameInput) {
+        return lastNameInput;
       }
 
       const nameInput = form.querySelector<HTMLInputElement>("input[name='name']");
-      phoneInput = document.createElement("input");
-      phoneInput.className = nameInput?.className ?? "form-control";
-      phoneInput.id = "phone";
-      phoneInput.name = "phone";
-      phoneInput.placeholder = messages.phone;
-      phoneInput.type = "tel";
+      lastNameInput = document.createElement("input");
+      lastNameInput.className = nameInput?.className ?? "form-control";
+      lastNameInput.id = "lastName";
+      lastNameInput.name = "lastName";
+      lastNameInput.placeholder = messages.lastName;
+      lastNameInput.required = true;
+      lastNameInput.type = "text";
 
       const wrapper = document.createElement("div");
-      wrapper.appendChild(phoneInput);
+      wrapper.appendChild(lastNameInput);
       nameInput?.parentElement?.after(wrapper);
-      return phoneInput;
+      return lastNameInput;
     };
 
-    ensurePhoneInput();
+    ensureLastNameInput();
 
     const setPlaceholder = (selector: string, value: string) => {
       const input = form.querySelector<HTMLInputElement>(selector);
@@ -61,49 +64,28 @@ export default function RsvpFormHydrator({ locale, messages }: Props) {
       }
     };
 
-    const setText = (selector: string, value: string) => {
-      const element = form.querySelector<HTMLElement>(selector);
-      if (element) {
-        element.textContent = value;
-      }
-    };
-
-    const ensurePlaceholderOption = (select: HTMLSelectElement, value: string) => {
-      let option = select.querySelector<HTMLOptionElement>("option[disabled]") ?? select.options[0];
-      if (!option) {
-        option = document.createElement("option");
-        select.prepend(option);
-      }
-      option.textContent = value;
-      option.value = "";
-      option.disabled = true;
-      option.selected = select.selectedIndex <= 0;
-    };
-
-    const normalizeGuestOptions = (select: HTMLSelectElement) => {
-      const selectedValue = String(Number(select.value || "0"));
-      select.replaceChildren();
-      const placeholder = document.createElement("option");
-      placeholder.value = "";
-      placeholder.disabled = true;
-      placeholder.selected = selectedValue === "0";
-      placeholder.textContent = messages.guestPlaceholder;
-      select.appendChild(placeholder);
-
-      for (let count = 1; count <= 5; count += 1) {
-        const option = document.createElement("option");
-        option.value = String(count);
-        option.textContent = String(count);
-        option.selected = selectedValue === String(count);
-        select.appendChild(option);
-      }
-    };
-
-    const ensureGuestLabel = (select: HTMLSelectElement, value: string) => {
-      const wrapper = select.parentElement;
+    const ensureGuestInput = () => {
+      const currentField = form.querySelector<HTMLInputElement | HTMLSelectElement>("[name='guest']");
+      const wrapper = currentField?.parentElement;
       if (!wrapper) {
-        return;
+        return null;
       }
+
+      let input = currentField instanceof HTMLInputElement ? currentField : null;
+      if (!input) {
+        input = document.createElement("input");
+        input.className = currentField.className || "form-control";
+        input.name = "guest";
+        currentField.replaceWith(input);
+      }
+
+      input.id = "guest";
+      input.type = "number";
+      input.min = "1";
+      input.max = "5";
+      input.step = "1";
+      input.required = true;
+      input.placeholder = messages.guestPlaceholder;
 
       let label = wrapper.querySelector<HTMLElement>(".rsvp-guest-label");
       if (!label) {
@@ -115,7 +97,8 @@ export default function RsvpFormHydrator({ locale, messages }: Props) {
         wrapper.prepend(label);
       }
 
-      label.textContent = value;
+      label.textContent = messages.guestHelp;
+      return input;
     };
 
     const localizeForm = () => {
@@ -135,14 +118,14 @@ export default function RsvpFormHydrator({ locale, messages }: Props) {
       }
 
       setPlaceholder("input[name='name']", messages.name);
-      setPlaceholder("input[name='phone']", messages.phone);
+      const nameInput = form.querySelector<HTMLInputElement>("input[name='name']");
+      if (nameInput) {
+        nameInput.required = true;
+      }
+      setPlaceholder("input[name='lastName']", messages.lastName);
       setLabel("label[for='attend']", messages.yes);
       setLabel("label[for='not']", messages.no);
-      const guestSelect = form.querySelector<HTMLSelectElement>("select[name='guest']");
-      if (guestSelect) {
-        ensureGuestLabel(guestSelect, messages.guestHelp);
-        normalizeGuestOptions(guestSelect);
-      }
+      ensureGuestInput();
 
       if (submitButton) {
         submitButton.textContent = messages.submit;
@@ -211,19 +194,20 @@ export default function RsvpFormHydrator({ locale, messages }: Props) {
 
     const toggleAttendanceFields = () => {
       const attending = resolveAttendance();
+      const guestInput = form.querySelector<HTMLInputElement>("input[name='guest']");
       const hiddenWhenDeclined = [
-        form.querySelector<HTMLElement>("select[name='guest']")?.parentElement,
+        guestInput?.parentElement,
       ].filter(Boolean) as HTMLElement[];
 
       hiddenWhenDeclined.forEach((element) => {
         element.style.display = attending === "no" ? "none" : "";
       });
 
+      if (guestInput) {
+        guestInput.required = attending === "yes";
+      }
       if (attending === "no") {
-        const guestSelect = form.querySelector<HTMLSelectElement>("select[name='guest']");
-        if (guestSelect) {
-          guestSelect.selectedIndex = 0;
-        }
+        guestInput!.value = "";
       }
     };
 
@@ -234,6 +218,11 @@ export default function RsvpFormHydrator({ locale, messages }: Props) {
 
     const handler = async (event: Event) => {
       event.preventDefault();
+      if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+      }
+
       resetMessages();
       toggleLoader(true);
 
@@ -241,7 +230,7 @@ export default function RsvpFormHydrator({ locale, messages }: Props) {
       const attending = resolveAttendance();
       const payload = {
         name: (formData.get("name") ?? "").toString().trim(),
-        phone: (formData.get("phone") ?? "").toString().trim(),
+        lastName: (formData.get("lastName") ?? "").toString().trim(),
         attending,
         guestCount: attending === "yes" ? (formData.get("guest") ?? "").toString() : "0",
         inviteCode: (formData.get("inviteCode") ?? "").toString().trim(),

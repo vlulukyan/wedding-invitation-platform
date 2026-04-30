@@ -81,9 +81,10 @@ export async function sendRsvpEmail(payload: RsvpPayload, recordId: number): Pro
   const transporter = getTransporter();
 
   const attendingText = payload.attending === "yes" ? "will be attending" : "cannot attend";
+  const fullName = `${payload.name} ${payload.lastName}`.trim();
   const lines = [
     `Name: ${payload.name}`,
-    `Phone: ${payload.phone ?? "Not provided"}`,
+    `Last name: ${payload.lastName}`,
     `Response: ${attendingText}`,
   ];
 
@@ -93,9 +94,10 @@ export async function sendRsvpEmail(payload: RsvpPayload, recordId: number): Pro
 
   const textBody = lines.join("\n");
   const htmlBody = `
-    <p><strong>${payload.name}</strong> ${attendingText}.</p>
+    <p><strong>${fullName}</strong> ${attendingText}.</p>
     <ul>
-      <li><strong>Phone:</strong> ${payload.phone ?? "Not provided"}</li>
+      <li><strong>Name:</strong> ${payload.name}</li>
+      <li><strong>Last name:</strong> ${payload.lastName}</li>
       ${payload.attending === "yes" ? `<li><strong>Guest count:</strong> ${payload.guestCount}</li>` : ""}
     </ul>
   `;
@@ -103,7 +105,7 @@ export async function sendRsvpEmail(payload: RsvpPayload, recordId: number): Pro
   await transporter.sendMail({
     from: config.from,
     to: config.to,
-    subject: `New RSVP (#${recordId}): ${payload.name}`,
+    subject: `New RSVP (#${recordId}): ${fullName}`,
     text: textBody,
     html: htmlBody,
   });
