@@ -16,7 +16,7 @@ const messages = {
     rsvp: {
       title: "Are You Attending?",
       deadline: "Please respond regarding your attendance by June 30.",
-      name: "Fisrt Name",
+      name: "First Name",
       lastName: "Last name",
       yes: "Yes, I will be there",
       no: "Sorry, I can't come",
