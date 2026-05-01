@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useCallback } from "react";
+import { useCallback, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import type { Locale } from "@/lib/locales";
@@ -17,9 +17,10 @@ export default function LanguageSwitcher({ locale, label }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
 
   const handleSelect = useCallback((value: Locale) => {
-    if (value === locale) {
+    if (value === locale || isPending) {
       return;
     }
 
@@ -33,20 +34,28 @@ export default function LanguageSwitcher({ locale, label }: Props) {
       router.replace(`${pathname}?${nextParams.toString()}`, { scroll: true });
       router.refresh();
     });
-  }, [locale, pathname, router, searchParams]);
+  }, [isPending, locale, pathname, router, searchParams]);
 
   return (
-    <div className="language-toggle" role="group" aria-label={label}>
-      {PUBLIC_LOCALES.map((code) => (
-        <button
-          key={code}
-          type="button"
-          className={`language-toggle__button${code === locale ? " language-toggle__button--active" : ""}`}
-          onClick={() => handleSelect(code)}
-        >
-          {code.toUpperCase()}
-        </button>
-      ))}
-    </div>
+    <>
+      <div className="language-toggle" role="group" aria-label={label} aria-busy={isPending}>
+        {PUBLIC_LOCALES.map((code) => (
+          <button
+            key={code}
+            type="button"
+            className={`language-toggle__button${code === locale ? " language-toggle__button--active" : ""}`}
+            disabled={isPending}
+            onClick={() => handleSelect(code)}
+          >
+            {code.toUpperCase()}
+          </button>
+        ))}
+      </div>
+      {isPending && (
+        <div className="language-loader" role="status" aria-live="polite" aria-label="Loading language">
+          <span className="language-loader__spinner" />
+        </div>
+      )}
+    </>
   );
 }

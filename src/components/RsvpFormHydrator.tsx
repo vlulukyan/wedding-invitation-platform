@@ -82,7 +82,7 @@ export default function RsvpFormHydrator({ locale, messages }: Props) {
       input.id = "guest";
       input.type = "number";
       input.min = "1";
-      input.max = "5";
+      input.max = "20";
       input.step = "1";
       input.required = true;
       input.placeholder = messages.guestPlaceholder;

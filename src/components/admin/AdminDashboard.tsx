@@ -1240,6 +1240,7 @@ const STATUS_OPTIONS: Array<{ value: Invitee["status"]; label: string }> = [
 function InviteeManager({ invitees, onChange, onError, onRefresh }: InviteeManagerProps) {
   const [items, setItems] = useState(invitees);
   const [creating, setCreating] = useState({ first_name: "", last_name: "", email: "", phone: "", locale: "en" as Locale });
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   useEffect(() => {
     setItems(invitees);
@@ -1311,6 +1312,30 @@ function InviteeManager({ invitees, onChange, onError, onRefresh }: InviteeManag
     });
   };
 
+  const deleteInvitee = async (invitee: Invitee) => {
+    const name = [invitee.first_name, invitee.last_name].filter(Boolean).join(" ") || invitee.email || "this invitee";
+    if (!window.confirm(`Delete invitation for ${name}?`)) {
+      return;
+    }
+
+    setDeletingId(invitee.id);
+    try {
+      const response = await fetch(`/api/invitees/${invitee.id}`, { method: "DELETE" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.error ?? "Unable to delete invitee");
+      }
+      const next = items.filter((entry) => entry.id !== invitee.id);
+      setItems(next);
+      onChange(next);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to delete invitee";
+      onError(message);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   return (
     <div className="invitee-manager admin-card">
       <form className="invitee-form" onSubmit={handleCreate}>
@@ -1354,6 +1379,7 @@ function InviteeManager({ invitees, onChange, onError, onRefresh }: InviteeManag
           <span>Status</span>
           <span>Guests</span>
           <span>Invite</span>
+          <span>Actions</span>
         </div>
         {items.map((invitee) => (
           <div key={invitee.id} className="invitee-row">
@@ -1402,8 +1428,18 @@ function InviteeManager({ invitees, onChange, onError, onRefresh }: InviteeManag
               <button type="button" onClick={() => copyLink(invitee.invite_code)}>
                 Copy Link
               </button>
+            </span>
+            <span className="invitee-actions">
               <button type="button" onClick={() => persistInvitee(invitee)}>
                 Save
+              </button>
+              <button
+                type="button"
+                className="danger"
+                disabled={deletingId === invitee.id}
+                onClick={() => deleteInvitee(invitee)}
+              >
+                {deletingId === invitee.id ? "Deleting..." : "Delete"}
               </button>
             </span>
           </div>

@@ -18,7 +18,7 @@ export const rsvpSchema = z.object({
     .coerce.number({ invalid_type_error: "Tell us how many guests you are bringing." })
     .int({ message: "Guest count must be a whole number." })
     .min(0, { message: "Guest count must be 0 or more." })
-    .max(5, { message: "We can accommodate up to 5 guests per RSVP." }),
+    .max(20, { message: "We can accommodate up to 20 guests per RSVP." }),
   inviteCode: z
     .string()
     .trim()
