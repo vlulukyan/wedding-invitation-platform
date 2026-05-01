@@ -17,7 +17,7 @@ const messages = {
       title: "Are You Attending?",
       deadline: "Please respond regarding your attendance by June 30.",
       name: "First Name",
-      lastName: "Last name",
+      lastName: "Last Name",
       yes: "Yes, I will be there",
       no: "Sorry, I can't come",
       guestHelp: "Please select how many guests will attend with you.",
